@@ -101,7 +101,10 @@ export function buildEvaluateCommand(params: {
 	const parts: string[] = [];
 
 	if (useUv) {
-		parts.push("uv", "run", "--directory", pythonDir, evalScript);
+		// Use --project (not --directory) to resolve python deps from pythonDir
+		// without changing the working directory. The script runs in ctx.cwd
+		// so it can find package.json, persona.md, src/, etc.
+		parts.push("uv", "run", "--project", pythonDir, evalScript);
 	} else {
 		parts.push("python3", evalScript);
 	}
@@ -152,7 +155,8 @@ export function buildReportCommand(params: {
 	const parts: string[] = [];
 
 	if (useUv) {
-		parts.push("uv", "run", "--directory", pythonDir, reportScript);
+		// Use --project (not --directory) to avoid changing cwd
+		parts.push("uv", "run", "--project", pythonDir, reportScript);
 	} else {
 		parts.push("python3", reportScript);
 	}
@@ -164,6 +168,34 @@ export function buildReportCommand(params: {
 	}
 
 	return parts.join(" ");
+}
+
+// ---------------------------------------------------------------------------
+// Persona task number extraction (lightweight, no Python needed)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse persona.md (and optional requirements.md) to extract task numbers.
+ * Looks for "#### Task N:" headers in the markdown.
+ */
+export function parsePersonaTaskNumbers(cwd: string, requirementsPath?: string): number[] {
+	const filePath = requirementsPath
+		? path.join(cwd, requirementsPath)
+		: path.join(cwd, "persona.md");
+
+	try {
+		const content = fs.readFileSync(filePath, "utf-8");
+		const taskNumbers: number[] = [];
+		// Match "#### Task N:" headers (with optional text after the number)
+		const pattern = /^#{1,4}\s+Task\s+(\d+)\s*:/gm;
+		let match;
+		while ((match = pattern.exec(content)) !== null) {
+			taskNumbers.push(parseInt(match[1], 10));
+		}
+		return taskNumbers;
+	} catch {
+		return [];
+	}
 }
 
 // ---------------------------------------------------------------------------
