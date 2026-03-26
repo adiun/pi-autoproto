@@ -15,6 +15,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -68,7 +69,7 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 						parts.push(theme.fg("dim", `: ${state.experimentName}`));
 					}
 					parts.push(theme.fg("dim", " — waiting for first evaluation"));
-					return new (require("@mariozechner/pi-tui").Text)(parts.join(""), 0, 0);
+					return new Text(parts.join(""), 0, 0);
 				});
 			} else {
 				ctx.ui.setWidget("autocrit", undefined);
