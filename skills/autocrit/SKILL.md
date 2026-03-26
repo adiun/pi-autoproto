@@ -26,8 +26,8 @@ Dashboard: `ctrl+x` to expand/collapse. `/autocrit` for status.
 
 1. Create `persona.md` (see [persona guide](references/examples/persona_example.md))
 2. `init_autocrit` — set mode, experiment name, persona command
-3. Build seed app (Vite project)
-4. `run_evaluation` with mode `calibrate` for baseline
+3. Build seed app (Vite project with `.gitignore`)
+4. `run_evaluation` with mode `quick` for baseline (mode `calibrate` for ≤4 tasks)
 5. Iterate: edit → `run_evaluation` → `log_iteration` → repeat
 
 ## Setup
@@ -105,10 +105,11 @@ For each prototype branch:
 3. Set up a Vite project:
    - `package.json` with `vite-plus` as devDependency
    - `vite.config.js`
-   - `pnpm install`
+   - `.gitignore` with `node_modules/` and `dist/`
+   - Install deps: `pnpm install` or `npm install` (whichever is available)
    - Organize code: `src/index.html`, `src/main.js`, `src/styles.css`, `src/data.js`
-4. Run calibration: `run_evaluation` with iteration=0, mode="calibrate"
-5. Call `log_iteration` with the baseline scores
+4. Run baseline: `run_evaluation` with iteration=0, mode="quick" (for ≤4 tasks, mode="calibrate" is also fine)
+5. Call `log_iteration` with the baseline scores (scores auto-read from eval_results.json if omitted)
 
 ### Iterate
 
@@ -128,7 +129,7 @@ Repeat until a stopping condition:
 
 4. **Edit.** Make the change to files in `src/`. Keep changes small — one logical improvement per iteration.
 
-5. **Check.** Run `npx vp check`. Fix lint/format errors.
+5. **Check.** Run `npx vp check src/`. Fix lint/format errors. Always target `src/` to avoid linting `node_modules/`.
 
 6. **Evaluate.** Call `run_evaluation` with the current iteration number. Use mode `quick` for fast iteration, or add task/tier filters to focus.
 
@@ -136,7 +137,7 @@ Repeat until a stopping condition:
    - Score improved or held → kept=true. Commit changes.
    - Score dropped → kept=false. Revert: `git checkout -- src/ package.json vite.config.js`
 
-8. **Record.** Call `log_iteration` with the scores and decision.
+8. **Record.** Call `log_iteration` with the iteration number, description, and kept/discarded. Scores are auto-read from eval_results.json — no need to compute manually.
 
 9. **Report.** Tell the user: "Iteration N: <description>. Score: X → Y. [Kept/Discarded]."
 
@@ -171,11 +172,16 @@ Present to the user: comparative report, recommendations, bias flags.
 
 - **Vision mode (default).** The evaluator sees actual screenshots with numbered labels on interactive elements.
 - **Design for visual quality**: layout, color, typography, whitespace matter.
-- **Use Vite+ for all apps.** `package.json` with `vite-plus`, `vite.config.js`, `pnpm install`.
+- **Don't shrink text for density.** The vision agent penalizes small text — keep font sizes ≥ 13px for body text, ≥ 11px for labels. Prefer layout changes (columns, dedicated views) over making everything smaller.
+- **Use Vite+ for all apps.** `package.json` with `vite-plus`, `vite.config.js`. Install with `pnpm install` or `npm install`.
 - **Only modify files in `src/`, `package.json`, and `vite.config.js`.**
+- **Always create `.gitignore`** with `node_modules/` and `dist/` before committing.
 - **Each iteration = one coherent change** with a clear thesis.
 - **P0 first.** Never work on P1/P2 while P0 tasks fail.
-- **Run `vp check` after every edit.**
+- **Run `vp check src/` after every edit.** Always target `src/` to avoid linting `node_modules/`.
+- **Score variance is real.** Single-run scores can swing 30+ points on the same code. Don't trust deltas under 15 points from a single quick run. If a task shows a surprising score change, re-run it before making a keep/discard decision.
+- **Timeouts ≠ failures.** If a task times out but passed in a previous iteration with unchanged code, use the previous score. Infrastructure timeouts (LLM latency, agent-browser issues) are flagged separately from UX failures.
+- **log_iteration auto-reads scores.** You don't need to manually compute composite/P0/P1/P2 — just pass iteration number, description, and kept. Scores are read from eval_results.json.
 - **Wishlist items are desires, not requirements.** Diagnose root causes.
 - **approach.md is read-only during iteration.** Don't pivot mid-prototype.
 - **All feedback is hypothesis-grade.** Treat as hypotheses for real users, not conclusions.
