@@ -26,10 +26,10 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 		],
 		parameters: Type.Object({
 			iteration: Type.Number({ description: "Iteration number" }),
-			composite: Type.Number({ description: "Composite score from evaluation" }),
-			p0: Type.Number({ description: "P0 tier score" }),
-			p1: Type.Number({ description: "P1 tier score" }),
-			p2: Type.Number({ description: "P2 tier score" }),
+			composite: Type.Optional(Type.Number({ description: "Composite score from evaluation. If omitted, auto-read from eval_results.json." })),
+			p0: Type.Optional(Type.Number({ description: "P0 tier score. If omitted, auto-read from eval_results.json." })),
+			p1: Type.Optional(Type.Number({ description: "P1 tier score. If omitted, auto-read from eval_results.json." })),
+			p2: Type.Optional(Type.Number({ description: "P2 tier score. If omitted, auto-read from eval_results.json." })),
 			description: Type.String({ description: "Short description of what this iteration changed" }),
 			kept: Type.Boolean({ description: "Whether the change was kept (score improved/held) or discarded (score dropped)" }),
 			dev_plan: Type.Optional(
@@ -52,12 +52,42 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 				};
 			}
 
+			// Auto-read scores from eval_results.json if not provided
+			let composite = params.composite;
+			let p0 = params.p0;
+			let p1 = params.p1;
+			let p2 = params.p2;
+
+			if (composite === undefined || p0 === undefined || p1 === undefined || p2 === undefined) {
+				const resultsDir = state.resultsDir ?? "results";
+				const evalResultsPath = path.join(ctx.cwd, resultsDir, `iter_${params.iteration}`, "eval_results.json");
+				try {
+					if (fs.existsSync(evalResultsPath)) {
+						const evalResults = JSON.parse(fs.readFileSync(evalResultsPath, "utf-8"));
+						composite = composite ?? evalResults.composite_score ?? 0;
+						p0 = p0 ?? evalResults.p0_score ?? 0;
+						p1 = p1 ?? evalResults.p1_score ?? 0;
+						p2 = p2 ?? evalResults.p2_score ?? 0;
+					} else {
+						return {
+							content: [{ type: "text", text: `❌ Scores not provided and eval_results.json not found at ${evalResultsPath}.\nEither provide composite/p0/p1/p2 scores or run run_evaluation first.` }],
+							details: {},
+						};
+					}
+				} catch {
+					return {
+						content: [{ type: "text", text: `❌ Could not read eval_results.json at ${evalResultsPath}.` }],
+						details: {},
+					};
+				}
+			}
+
 			const result: IterationResult = {
 				iteration: params.iteration,
-				composite: params.composite,
-				p0: params.p0,
-				p1: params.p1,
-				p2: params.p2,
+				composite: composite!,
+				p0: p0!,
+				p1: p1!,
+				p2: p2!,
 				description: params.description,
 				kept: params.kept,
 				branch: state.currentBranch ?? "main",
@@ -74,15 +104,15 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 			if (state.resultsDir) {
 				const absResultsDir = path.join(ctx.cwd, state.resultsDir);
 				if (fs.existsSync(absResultsDir)) {
-					appendResultsTsv(absResultsDir, params);
+					appendResultsTsv(absResultsDir, { ...params, composite: composite!, p0: p0!, p1: p1!, p2: p2! });
 
 					const historyEntry: Record<string, unknown> = {
 						iteration: params.iteration,
 						timestamp: new Date().toISOString(),
-						composite: params.composite,
-						p0: params.p0,
-						p1: params.p1,
-						p2: params.p2,
+						composite: composite!,
+						p0: p0!,
+						p1: p1!,
+						p2: p2!,
 						description: params.description,
 						kept: params.kept,
 					};
@@ -103,12 +133,12 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 			const statusWord = params.kept ? "kept" : "discarded";
 
 			let response = `${statusEmoji} Iteration ${params.iteration}: ${params.description} — ${statusWord}\n`;
-			response += `Composite: ${params.composite.toFixed(1)} | P0: ${params.p0.toFixed(1)} | P1: ${params.p1.toFixed(1)} | P2: ${params.p2.toFixed(1)}\n`;
+			response += `Composite: ${composite!.toFixed(1)} | P0: ${p0!.toFixed(1)} | P1: ${p1!.toFixed(1)} | P2: ${p2!.toFixed(1)}\n`;
 
 			// Delta from previous
 			if (iters.length > 1) {
 				const prev = iters[iters.length - 2];
-				const delta = params.composite - prev.composite;
+				const delta = composite! - prev.composite;
 				const sign = delta >= 0 ? "+" : "";
 				response += `Change: ${sign}${delta.toFixed(1)} from iteration ${prev.iteration}\n`;
 			}
@@ -127,7 +157,7 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 			}
 
 			// Stopping conditions
-			const allP0Pass = params.p0 >= 100 && params.composite > 85;
+			const allP0Pass = p0! >= 100 && composite! > 85;
 			if (allP0Pass) {
 				response += "\n🎉 All P0 tasks passing with composite > 85. Consider stopping.\n";
 			}

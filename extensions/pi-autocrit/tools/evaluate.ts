@@ -157,6 +157,9 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			max_steps: Type.Optional(
 				Type.Number({ description: "Max interaction steps per task (default: 15)" }),
 			),
+			runs: Type.Optional(
+				Type.Number({ description: "Number of evaluation runs per task (default depends on mode: quick=1, full=2, calibrate=3). Higher reduces score variance." }),
+			),
 			skip_feedback: Type.Optional(
 				Type.Boolean({ description: "Skip persona feedback generation (saves 1 LLM call per task)" }),
 			),
@@ -313,6 +316,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 				mode: runCtx.mode,
 				task: taskNum,
 				maxSteps: params.max_steps as number | undefined,
+				runs: params.runs as number | undefined,
 				skipFeedback: params.skip_feedback as boolean | undefined,
 				requirementsFile: params.requirements_file as string | undefined,
 				outputDir: taskOutputDir,
@@ -320,9 +324,13 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 				personaCmd: state.personaCmd!,
 			});
 
+			// Scale timeout by number of runs
+			const runsForTask = (params.runs as number | undefined) ?? (runCtx.mode === "quick" ? 1 : 2);
+			const taskTimeout = PER_TASK_TIMEOUT_S * runsForTask;
+
 			let result = await pi.exec("bash", ["-c", command], {
 				signal: runCtx.signal,
-				timeout: PER_TASK_TIMEOUT_S,
+				timeout: taskTimeout,
 			});
 
 			// Check if it timed out (exit code from timeout kill is typically non-zero with no output)
@@ -341,7 +349,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 
 				result = await pi.exec("bash", ["-c", command], {
 					signal: runCtx.signal,
-					timeout: PER_TASK_TIMEOUT_S,
+					timeout: taskTimeout,
 				});
 				taskResult = readEvalResults(taskResultPath);
 			}
@@ -417,6 +425,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			tier: params.tier as string | undefined,
 			variantCount: (params.variant_count as number | undefined) ?? 4,
 			maxSteps: params.max_steps as number | undefined,
+			runs: params.runs as number | undefined,
 			skipFeedback: params.skip_feedback as boolean | undefined,
 			requirementsFile: params.requirements_file as string | undefined,
 			outputDir: runCtx.iterDir,

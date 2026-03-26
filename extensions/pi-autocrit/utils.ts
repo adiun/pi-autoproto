@@ -89,6 +89,7 @@ export function buildEvaluateCommand(params: {
 	tier?: string;
 	variantCount?: number;
 	maxSteps?: number;
+	runs?: number;
 	skipFeedback?: boolean;
 	requirementsFile?: string;
 	outputDir: string;
@@ -130,6 +131,9 @@ export function buildEvaluateCommand(params: {
 	}
 	if (params.maxSteps !== undefined) {
 		parts.push("--max-steps", String(params.maxSteps));
+	}
+	if (params.runs !== undefined) {
+		parts.push("--runs", String(params.runs));
 	}
 	if (params.skipFeedback) {
 		parts.push("--skip-feedback");
