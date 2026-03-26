@@ -75,6 +75,12 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 			}
 			fs.mkdirSync(path.join(ctx.cwd, state.resultsDir), { recursive: true });
 
+			// Create .gitignore if it doesn't exist
+			const gitignorePath = path.join(ctx.cwd, ".gitignore");
+			if (!fs.existsSync(gitignorePath)) {
+				fs.writeFileSync(gitignorePath, "node_modules/\ndist/\n.DS_Store\n");
+			}
+
 			// Write config to autocrit.jsonl
 			writeConfig(ctx.cwd, state);
 
