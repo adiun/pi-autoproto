@@ -10,14 +10,14 @@
 
 An extension for **[pi](https://pi.dev/)** — an AI coding agent that runs in your terminal. pi-autocrit gives pi the tools and workflow to run persona-driven UX evaluation loops: build a web app prototype, evaluate it with a synthetic user persona via [agent-browser](https://github.com/nicobailey/agent-browser), iterate based on structured feedback.
 
-Based on [autocrit](https://github.com/YOUR_USERNAME/autocrit).
+Based on [autocrit](https://github.com/adiun/autocrit).
 
 ---
 
 ## Quick start
 
 ```bash
-pi install https://github.com/YOUR_USERNAME/pi-autocrit
+pi install https://github.com/adiun/pi-autocrit
 ```
 
 ## What's included
@@ -68,7 +68,7 @@ pi install https://github.com/YOUR_USERNAME/pi-autocrit
 ## Install
 
 ```bash
-pi install https://github.com/YOUR_USERNAME/pi-autocrit
+pi install https://github.com/adiun/pi-autocrit
 ```
 
 <details>
