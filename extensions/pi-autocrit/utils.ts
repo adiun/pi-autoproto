@@ -95,11 +95,14 @@ export function buildEvaluateCommand(params: {
 	outputDir: string;
 	screenshotDir: string;
 	personaCmd: string;
+	port?: number;
 }): string {
 	const { pythonDir, useUv } = params;
 	const evalScript = path.join(pythonDir, "evaluate.py");
 
-	const parts: string[] = [];
+	// Issue 2: Clear VIRTUAL_ENV to avoid uv conflicts and startup delays
+	// when the parent shell has a different venv activated.
+	const parts: string[] = ["unset VIRTUAL_ENV;"];
 
 	if (useUv) {
 		// Use --project (not --directory) to resolve python deps from pythonDir
@@ -140,6 +143,9 @@ export function buildEvaluateCommand(params: {
 	}
 	if (params.requirementsFile) {
 		parts.push("--requirements", params.requirementsFile);
+	}
+	if (params.port !== undefined) {
+		parts.push("--port", String(params.port));
 	}
 	parts.push("--output-dir", params.outputDir);
 	parts.push("--screenshot-dir", params.screenshotDir);

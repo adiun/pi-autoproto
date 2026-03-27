@@ -8,7 +8,7 @@ import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createState, writeConfig, type AutocritRuntime, type AutocritState } from "../state.js";
+import { createState, reconstructState, writeConfig, type AutocritRuntime, type AutocritState } from "../state.js";
 import { checkDependencies, formatDependencyReport, getPythonDir } from "../utils.js";
 
 export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRuntime) {
@@ -59,15 +59,26 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 				};
 			}
 
-			// Set up state
+			// Set up state — reuse existing resultsDir if resuming the same experiment
+			const existingState = reconstructState(ctx.cwd);
 			const state = runtime.state;
 			state.active = true;
 			state.mode = params.mode;
 			state.experimentName = params.experiment_name;
 			state.personaCmd = params.persona_cmd;
 
-			// Create results directory
-			if (params.mode === "full") {
+			// Reuse existing iterations from autocrit.jsonl
+			if (existingState.active && existingState.iterations.length > 0) {
+				state.iterations = existingState.iterations;
+			}
+
+			// Create or reuse results directory
+			if (existingState.active && existingState.resultsDir
+				&& existingState.experimentName === params.experiment_name
+				&& fs.existsSync(path.join(ctx.cwd, existingState.resultsDir))) {
+				// Reuse existing directory from same experiment
+				state.resultsDir = existingState.resultsDir;
+			} else if (params.mode === "full") {
 				state.resultsDir = `results/${params.experiment_name}`;
 			} else {
 				const timestamp = new Date().toISOString().slice(0, 16).replace(/[:-]/g, "").replace("T", "_");

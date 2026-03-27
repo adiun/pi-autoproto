@@ -1088,19 +1088,30 @@ def main() -> None:
     num_runs = 3 if args.calibrate else args.runs
 
     # Start server — Vite if package.json exists, otherwise Python
+    # If a port is provided, check if it's already serving (external server management).
     port = args.port or _find_free_port()
     vite_proc: subprocess.Popen | None = None
     server: http.server.HTTPServer | None = None
+    external_server = False
 
-    if use_vite:
-        ensure_packages_installed()
-        vite_proc = start_vite_server(port)
-    else:
+    if args.port:
+        # Check if the port is already serving (managed by the caller)
         try:
-            server = start_server(port, "src")
-        except OSError as e:
-            print(f"Error starting server on port {port}: {e}")
-            sys.exit(1)
+            urllib.request.urlopen(f"http://localhost:{port}", timeout=2)
+            external_server = True
+        except Exception:
+            pass  # Port not serving, start our own server
+
+    if not external_server:
+        if use_vite:
+            ensure_packages_installed()
+            vite_proc = start_vite_server(port)
+        else:
+            try:
+                server = start_server(port, "src")
+            except OSError as e:
+                print(f"Error starting server on port {port}: {e}")
+                sys.exit(1)
 
     if not args.quiet:
         mode = "Vite+" if use_vite else "Python"
@@ -1310,11 +1321,12 @@ def main() -> None:
             _write_json(final_results, scores, calibration, output_dir=args.output_dir)
 
     finally:
-        if vite_proc is not None:
-            vite_proc.terminate()
-            vite_proc.wait(timeout=5)
-        if server is not None:
-            server.shutdown()
+        if not external_server:
+            if vite_proc is not None:
+                vite_proc.terminate()
+                vite_proc.wait(timeout=5)
+            if server is not None:
+                server.shutdown()
 
 
 if __name__ == "__main__":
