@@ -47,10 +47,10 @@ export interface AutocritState {
 
 export interface AutocritRuntime {
 	state: AutocritState;
-	/** Whether the dev server is managed by us */
-	devServerPid: number | null;
-	/** Port the dev server is on */
+	/** Port of the cached dev server (reused across evaluations) */
 	devServerPort: number | null;
+	/** Cleanup function for the cached dev server */
+	devServerCleanup: (() => Promise<void>) | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,8 +73,8 @@ export function createState(): AutocritState {
 export function createRuntime(): AutocritRuntime {
 	return {
 		state: createState(),
-		devServerPid: null,
 		devServerPort: null,
+		devServerCleanup: null,
 	};
 }
 

@@ -112,11 +112,11 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 				response += "1. Read persona.md and any requirements.md/hypotheses.md\n";
 				response += "2. Brainstorm 3 different UX approaches\n";
 				response += "3. Create prototype branches (autocrit/<experiment>/proto-a, proto-b, proto-c)\n";
-				response += "4. Build seed app on each branch, then run_evaluation with mode 'calibrate'\n";
+				response += "4. Build seed app on each branch, then run_evaluation with mode 'quick'\n";
 			} else {
 				response += "Next steps:\n";
 				response += "1. Build the seed app (Vite project with package.json)\n";
-				response += "2. Run run_evaluation with mode 'calibrate' to get baseline scores\n";
+				response += "2. Run run_evaluation with mode 'quick' to get baseline scores\n";
 				response += "3. Iterate: edit → run_evaluation → log_iteration → repeat\n";
 			}
 

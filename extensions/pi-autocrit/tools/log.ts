@@ -32,13 +32,6 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 			p2: Type.Optional(Type.Number({ description: "P2 tier score. If omitted, auto-read from eval_results.json." })),
 			description: Type.String({ description: "Short description of what this iteration changed" }),
 			kept: Type.Boolean({ description: "Whether the change was kept (score improved/held) or discarded (score dropped)" }),
-			dev_plan: Type.Optional(
-				Type.Object({
-					target_task: Type.Optional(Type.Number()),
-					thesis: Type.Optional(Type.String()),
-					approach: Type.Optional(Type.String()),
-				}, { description: "Development plan for this iteration" }),
-			),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -116,9 +109,6 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 						description: params.description,
 						kept: params.kept,
 					};
-					if (params.dev_plan) {
-						historyEntry.dev_plan = params.dev_plan;
-					}
 					appendIterationHistory(absResultsDir, historyEntry);
 				}
 			}

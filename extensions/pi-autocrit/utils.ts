@@ -86,12 +86,7 @@ export function buildEvaluateCommand(params: {
 	iteration?: number;
 	mode?: string;
 	task?: number;
-	tier?: string;
 	variantCount?: number;
-	maxSteps?: number;
-	runs?: number;
-	skipFeedback?: boolean;
-	requirementsFile?: string;
 	outputDir: string;
 	screenshotDir: string;
 	personaCmd: string;
@@ -100,7 +95,7 @@ export function buildEvaluateCommand(params: {
 	const { pythonDir, useUv } = params;
 	const evalScript = path.join(pythonDir, "evaluate.py");
 
-	// Issue 2: Clear VIRTUAL_ENV to avoid uv conflicts and startup delays
+	// Clear VIRTUAL_ENV to avoid uv conflicts and startup delays
 	// when the parent shell has a different venv activated.
 	const parts: string[] = ["unset VIRTUAL_ENV;"];
 
@@ -115,9 +110,7 @@ export function buildEvaluateCommand(params: {
 
 	parts.push("--cmd", JSON.stringify(params.personaCmd));
 
-	if (params.mode === "calibrate") {
-		parts.push("--calibrate");
-	} else if (params.mode === "quick") {
+	if (params.mode === "quick") {
 		parts.push("--quick");
 	} else if (params.mode === "variants" && params.variantCount) {
 		parts.push("--variants", String(params.variantCount));
@@ -128,21 +121,6 @@ export function buildEvaluateCommand(params: {
 	}
 	if (params.task !== undefined) {
 		parts.push("--task", String(params.task));
-	}
-	if (params.tier) {
-		parts.push("--tier", params.tier);
-	}
-	if (params.maxSteps !== undefined) {
-		parts.push("--max-steps", String(params.maxSteps));
-	}
-	if (params.runs !== undefined) {
-		parts.push("--runs", String(params.runs));
-	}
-	if (params.skipFeedback) {
-		parts.push("--skip-feedback");
-	}
-	if (params.requirementsFile) {
-		parts.push("--requirements", params.requirementsFile);
 	}
 	if (params.port !== undefined) {
 		parts.push("--port", String(params.port));

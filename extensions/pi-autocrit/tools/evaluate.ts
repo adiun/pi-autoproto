@@ -2,10 +2,11 @@
  * run_evaluation tool — wraps evaluate.py to run persona-driven evaluation.
  *
  * Key design decisions:
- * - Runs tasks individually when no specific task is requested, with per-task timeouts
+ * - Runs tasks individually with per-task timeouts and auto-retries
+ * - Uses all-at-once execution only for variants mode
  * - Merges per-task results into a combined eval_results.json
  * - Distinguishes infrastructure timeouts from UX failures
- * - Auto-retries tasks that time out (once)
+ * - Caches dev server across evaluations for performance
  * - Reports partial results even if some tasks fail/timeout
  */
 
@@ -25,6 +26,8 @@ const EVAL_MAX_BYTES = 8 * 1024; // 8KB
 
 // Default max steps per task (must match evaluate.py DEFAULT_MAX_STEPS)
 const DEFAULT_MAX_STEPS = 15;
+// Quick mode max steps (must match evaluate.py --quick default)
+const QUICK_MAX_STEPS = 10;
 
 // Timeout per step: ~60s covers LLM call (~30-50s) + screenshot + browser action + wait
 const TIMEOUT_PER_STEP_MS = 60_000;
@@ -134,45 +137,30 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			"and returns structured results (scores, per-task feedback, stuck points, wishlist). " +
 			"When running all tasks, executes them individually with per-task timeouts and auto-retries. " +
 			"Output is truncated for context efficiency — read eval_results.json for full details.",
-		promptSnippet: "Run persona evaluation (calibrate, quick, full, or variants mode). Returns structured scores and feedback.",
+		promptSnippet: "Run persona evaluation (quick, full, or variants mode). Returns structured scores and feedback.",
 		promptGuidelines: [
 			"Use run_evaluation instead of manually running evaluate.py — it handles paths, flags, and output parsing.",
 			"After run_evaluation, always call log_iteration to record the result.",
-			"Use mode 'calibrate' for the baseline run, 'quick' for fast iterations, 'full' for thorough evaluation.",
+			"Use mode 'quick' for baseline and fast iterations (1 run, no feedback), 'full' for thorough evaluation (2 runs, with feedback).",
 			"Use mode 'variants' with variant_count for final multi-persona evaluation.",
+			"Run ONE evaluation per iteration. Do not re-run to confirm — trust the score.",
+			"Only use the task filter when debugging a specific stuck task after a full evaluation identified it.",
 			"Read eval_results.json in the output directory for full per-task details including persona_feedback and wishlist.",
 		],
 		parameters: Type.Object({
 			iteration: Type.Number({
-				description: "Iteration number (0 for baseline/calibration)",
+				description: "Iteration number (0 for baseline)",
 			}),
 			mode: Type.Optional(
-				StringEnum(["calibrate", "quick", "full", "variants"] as const, {
-					description: "Evaluation mode: calibrate (3 runs, stability check), quick (1 run, no feedback), full (2 runs), variants (multi-persona). Default: full",
+				StringEnum(["quick", "full", "variants"] as const, {
+					description: "Evaluation mode: quick (1 run, no feedback), full (2 runs, with feedback), variants (multi-persona). Default: full",
 				}),
 			),
 			task: Type.Optional(
-				Type.Number({ description: "Run only this task number" }),
-			),
-			tier: Type.Optional(
-				StringEnum(["P0", "P1", "P2"] as const, {
-					description: "Run only tasks of this tier",
-				}),
+				Type.Number({ description: "Run only this task number (for debugging a specific stuck task after a full evaluation)" }),
 			),
 			variant_count: Type.Optional(
 				Type.Number({ description: "Number of persona variants for variants mode (default: 4)" }),
-			),
-			max_steps: Type.Optional(
-				Type.Number({ description: "Max interaction steps per task (default: 15)" }),
-			),
-			runs: Type.Optional(
-				Type.Number({ description: "Number of evaluation runs per task (default depends on mode: quick=1, full=2, calibrate=3). Higher reduces score variance." }),
-			),
-			skip_feedback: Type.Optional(
-				Type.Boolean({ description: "Skip persona feedback generation (saves 1 LLM call per task)" }),
-			),
-			requirements_file: Type.Optional(
-				Type.String({ description: "Path to separate requirements.md (if tasks are not in persona.md)" }),
 			),
 		}),
 
@@ -210,19 +198,15 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			const evalResultsPath = path.join(ctx.cwd, iterDir, "eval_results.json");
 			const mode = params.mode ?? "full";
 
-			// Decide execution strategy:
-			// - If a specific task is requested, run it directly
-			// - If calibrate/variants mode, run everything at once (needs all tasks for aggregation)
-			// - Otherwise: run tasks individually with per-task timeouts
-			const usePerTaskExecution = !params.task && !params.tier && (mode === "quick" || mode === "full");
-
-			if (usePerTaskExecution) {
-				return await runPerTask(params, {
+			// Variants mode runs all-at-once (evaluate.py handles variant generation internally)
+			// Everything else uses per-task execution with server reuse and caching
+			if (mode === "variants") {
+				return await runAllAtOnce(params, {
 					pythonDir, useUv, iterDir, screenshotDir,
 					evalResultsPath, mode, signal, onUpdate, ctx,
 				});
 			} else {
-				return await runAllAtOnce(params, {
+				return await runPerTask(params, {
 					pythonDir, useUv, iterDir, screenshotDir,
 					evalResultsPath, mode, signal, onUpdate, ctx,
 				});
@@ -234,7 +218,6 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			text += theme.fg("accent", `iter ${args.iteration ?? "?"}`);
 			if (args.mode) text += theme.fg("dim", ` (${args.mode})`);
 			if (args.task) text += theme.fg("dim", ` task ${args.task}`);
-			if (args.tier) text += theme.fg("dim", ` ${args.tier}`);
 			return new Text(text, 0, 0);
 		},
 
@@ -247,9 +230,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		},
 	});
 
-	// ── Per-task execution ──────────────────────────────────────────────
-	// Runs each task as a separate evaluate.py invocation with its own timeout.
-	// Merges results incrementally and auto-retries timeouts.
+	// ── Helper types and functions ──────────────────────────────────────
 
 	interface RunContext {
 		pythonDir: string;
@@ -287,7 +268,6 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		const usePnpm = fs.existsSync(path.join(cwd, "pnpm-lock.yaml"));
 		const runner = usePnpm ? "pnpm exec" : "npx";
 		// Start server in background via nohup so it survives parent process changes.
-		// The `& echo $!` captures the PID for cleanup.
 		const startCmd = `nohup ${runner} vp dev --port ${port} --strictPort --host localhost > /dev/null 2>&1 &`;
 
 		await pi.exec("bash", ["-c", startCmd], { timeout: 5000 });
@@ -333,17 +313,56 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		return port;
 	}
 
+	/**
+	 * Get cached dev server or start a new one.
+	 * Server is cached in runtime for reuse across run_evaluation calls.
+	 * Vite's HMR handles code changes automatically — no need to restart.
+	 */
+	async function getOrCreateDevServer(cwd: string): Promise<{ port: number; cleanup: () => Promise<void> }> {
+		const runtime = getRuntime();
+
+		// Check if we have a cached server that's still alive
+		if (runtime.devServerPort !== null && runtime.devServerCleanup !== null) {
+			try {
+				const check = await pi.exec("bash", ["-c",
+					`curl -s -o /dev/null -w "%{http_code}" http://localhost:${runtime.devServerPort}`,
+				], { timeout: 3000 });
+				if (check.stdout?.trim() === "200") {
+					return {
+						port: runtime.devServerPort,
+						cleanup: runtime.devServerCleanup,
+					};
+				}
+			} catch {
+				// Server died
+			}
+			// Cached server is dead, clear cache
+			runtime.devServerPort = null;
+			runtime.devServerCleanup = null;
+		}
+
+		// Start new server and cache it
+		const server = await startDevServer(cwd);
+		runtime.devServerPort = server.port;
+		runtime.devServerCleanup = server.cleanup;
+		return server;
+	}
+
+	// ── Per-task execution ──────────────────────────────────────────────
+	// Runs each task as a separate evaluate.py invocation with its own timeout.
+	// Merges results incrementally and auto-retries timeouts.
+	// Used for quick and full modes (with or without task filter).
+
 	async function runPerTask(
 		params: Record<string, unknown>,
 		runCtx: RunContext,
 	) {
 		const state = getRuntime().state;
 
-		// Parse persona.md to get task numbers
-		const taskNumbers = parsePersonaTaskNumbers(
-			runCtx.ctx.cwd,
-			params.requirements_file as string | undefined,
-		);
+		// If task filter specified, run only that task; otherwise parse all from persona.md
+		const taskNumbers = params.task
+			? [params.task as number]
+			: parsePersonaTaskNumbers(runCtx.ctx.cwd);
 
 		if (taskNumbers.length === 0) {
 			return {
@@ -352,7 +371,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			};
 		}
 
-		// Issue 7: Delete stale eval_results.json before starting
+		// Delete stale eval_results.json before starting
 		if (fs.existsSync(runCtx.evalResultsPath)) {
 			fs.unlinkSync(runCtx.evalResultsPath);
 		}
@@ -370,140 +389,130 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		let completedCount = 0;
 		let timedOutCount = 0;
 
-		// Issue 3: Start dev server once and reuse across all tasks
-		let devServer: { port: number; cleanup: () => Promise<void> } | null = null;
-		try {
+		// Derive max_steps and runs from mode (no per-call overrides)
+		const maxSteps = runCtx.mode === "quick" ? QUICK_MAX_STEPS : DEFAULT_MAX_STEPS;
+		const runsForTask = runCtx.mode === "quick" ? 1 : 2;
+		const taskTimeoutMs = computeTaskTimeoutMs(maxSteps, runsForTask);
+
+		// Get or create cached dev server
+		runCtx.onUpdate?.({
+			content: [{
+				type: "text",
+				text: `Starting dev server…`,
+			}],
+		});
+		const devServer = await getOrCreateDevServer(runCtx.ctx.cwd);
+
+		for (const taskNum of taskNumbers) {
+			if (runCtx.signal?.aborted) break;
+
+			completedCount++;
 			runCtx.onUpdate?.({
 				content: [{
 					type: "text",
-					text: `Starting dev server…`,
+					text: `Evaluating task ${taskNum} (${completedCount}/${totalTasks})…`,
 				}],
 			});
-			devServer = await startDevServer(runCtx.ctx.cwd);
 
-			for (const taskNum of taskNumbers) {
-				if (runCtx.signal?.aborted) break;
+			// Temp output dir for this task's results
+			const taskOutputDir = path.join(runCtx.iterDir, `_task_${taskNum}`);
+			fs.mkdirSync(path.join(runCtx.ctx.cwd, taskOutputDir), { recursive: true });
 
-				completedCount++;
+			const command = buildEvaluateCommand({
+				pythonDir: runCtx.pythonDir,
+				useUv: runCtx.useUv,
+				iteration: params.iteration as number,
+				mode: runCtx.mode,
+				task: taskNum,
+				outputDir: taskOutputDir,
+				screenshotDir: runCtx.screenshotDir,
+				personaCmd: state.personaCmd!,
+				port: devServer.port,
+			});
+
+			let result = await pi.exec("bash", ["-c", command], {
+				signal: runCtx.signal,
+				timeout: taskTimeoutMs,
+			});
+
+			// Check if it timed out (exit code from timeout kill is typically non-zero with no output)
+			const taskResultPath = path.join(runCtx.ctx.cwd, taskOutputDir, "eval_results.json");
+			let taskResult = readEvalResults(taskResultPath);
+			const didTimeout = result.code !== 0 && !taskResult;
+
+			// Auto-retry once on timeout
+			if (didTimeout && !runCtx.signal?.aborted) {
 				runCtx.onUpdate?.({
 					content: [{
 						type: "text",
-						text: `Evaluating task ${taskNum} (${completedCount}/${totalTasks})…`,
+						text: `Task ${taskNum} timed out, retrying (${completedCount}/${totalTasks})…`,
 					}],
 				});
 
-				// Temp output dir for this task's results
-				const taskOutputDir = path.join(runCtx.iterDir, `_task_${taskNum}`);
-				fs.mkdirSync(path.join(runCtx.ctx.cwd, taskOutputDir), { recursive: true });
-
-				const command = buildEvaluateCommand({
-					pythonDir: runCtx.pythonDir,
-					useUv: runCtx.useUv,
-					iteration: params.iteration as number,
-					mode: runCtx.mode,
-					task: taskNum,
-					maxSteps: params.max_steps as number | undefined,
-					runs: params.runs as number | undefined,
-					skipFeedback: params.skip_feedback as boolean | undefined,
-					requirementsFile: params.requirements_file as string | undefined,
-					outputDir: taskOutputDir,
-					screenshotDir: runCtx.screenshotDir,
-					personaCmd: state.personaCmd!,
-					port: devServer.port,
-				});
-
-				// Issue 1 & 4: Timeout in ms, scaled by max_steps and runs
-				const maxSteps = (params.max_steps as number | undefined) ?? DEFAULT_MAX_STEPS;
-				const runsForTask = (params.runs as number | undefined) ?? (runCtx.mode === "quick" ? 1 : 2);
-				const taskTimeoutMs = computeTaskTimeoutMs(maxSteps, runsForTask);
-
-				let result = await pi.exec("bash", ["-c", command], {
+				result = await pi.exec("bash", ["-c", command], {
 					signal: runCtx.signal,
 					timeout: taskTimeoutMs,
 				});
-
-				// Check if it timed out (exit code from timeout kill is typically non-zero with no output)
-				const taskResultPath = path.join(runCtx.ctx.cwd, taskOutputDir, "eval_results.json");
-				let taskResult = readEvalResults(taskResultPath);
-				const didTimeout = result.code !== 0 && !taskResult;
-
-				// Auto-retry once on timeout
-				if (didTimeout && !runCtx.signal?.aborted) {
-					runCtx.onUpdate?.({
-						content: [{
-							type: "text",
-							text: `Task ${taskNum} timed out, retrying (${completedCount}/${totalTasks})…`,
-						}],
-					});
-
-					result = await pi.exec("bash", ["-c", command], {
-						signal: runCtx.signal,
-						timeout: taskTimeoutMs,
-					});
-					taskResult = readEvalResults(taskResultPath);
-				}
-
-				if (taskResult) {
-					// Mark timeout if the result came from retry
-					if (didTimeout && taskResult.tasks.length > 0) {
-						taskResult.tasks[0].timed_out = false; // retry succeeded
-					}
-					mergeTaskResult(combined, taskResult);
-				} else {
-					// Total failure — record a zero-score placeholder
-					timedOutCount++;
-					const placeholder: TaskResultJson = {
-						number: taskNum,
-						name: `Task ${taskNum}`,
-						tier: "P0",
-						completed: false,
-						score: 0,
-						steps: 0,
-						stuck_points: [didTimeout ? "Infrastructure timeout (not a UX failure)" : "Evaluation error"],
-						found_answer: null,
-						notes: didTimeout ? "Task timed out — LLM or agent-browser was unresponsive" : "evaluate.py returned an error",
-						persona_feedback: "",
-						wishlist: [],
-						timed_out: didTimeout,
-					};
-					// Try to get the actual tier/name from existing combined results or leave as placeholder
-					const existingTask = combined.tasks.find((t) => t.number === taskNum);
-					if (existingTask) {
-						placeholder.name = existingTask.name;
-						placeholder.tier = existingTask.tier;
-					}
-					mergeTaskResult(combined, { ...combined, tasks: [placeholder] });
-				}
-
-				// Clean up per-task temp dir
-				try {
-					fs.rmSync(path.join(runCtx.ctx.cwd, taskOutputDir), { recursive: true });
-				} catch {
-					// ignore
-				}
-
-				// Write intermediate combined results after each task
-				recomputeScores(combined);
-				fs.writeFileSync(runCtx.evalResultsPath, JSON.stringify(combined, null, 2));
-
-				// Issue 6: Stream progress with per-task score
-				const lastTask = combined.tasks.find((t) => t.number === taskNum);
-				if (lastTask) {
-					const status = lastTask.timed_out ? "TIMEOUT" : lastTask.completed ? "PASS" : "FAIL";
-					runCtx.onUpdate?.({
-						content: [{
-							type: "text",
-							text: `Task ${taskNum} [${lastTask.tier}]: ${status} (${lastTask.score}) — ${completedCount}/${totalTasks} done | Running composite: ${combined.composite_score}`,
-						}],
-					});
-				}
+				taskResult = readEvalResults(taskResultPath);
 			}
-		} finally {
-			// Issue 3: Clean up dev server
-			if (devServer) {
-				await devServer.cleanup();
+
+			if (taskResult) {
+				// Mark timeout if the result came from retry
+				if (didTimeout && taskResult.tasks.length > 0) {
+					taskResult.tasks[0].timed_out = false; // retry succeeded
+				}
+				mergeTaskResult(combined, taskResult);
+			} else {
+				// Total failure — record a zero-score placeholder
+				timedOutCount++;
+				const placeholder: TaskResultJson = {
+					number: taskNum,
+					name: `Task ${taskNum}`,
+					tier: "P0",
+					completed: false,
+					score: 0,
+					steps: 0,
+					stuck_points: [didTimeout ? "Infrastructure timeout (not a UX failure)" : "Evaluation error"],
+					found_answer: null,
+					notes: didTimeout ? "Task timed out — LLM or agent-browser was unresponsive" : "evaluate.py returned an error",
+					persona_feedback: "",
+					wishlist: [],
+					timed_out: didTimeout,
+				};
+				// Try to get the actual tier/name from existing combined results or leave as placeholder
+				const existingTask = combined.tasks.find((t) => t.number === taskNum);
+				if (existingTask) {
+					placeholder.name = existingTask.name;
+					placeholder.tier = existingTask.tier;
+				}
+				mergeTaskResult(combined, { ...combined, tasks: [placeholder] });
+			}
+
+			// Clean up per-task temp dir
+			try {
+				fs.rmSync(path.join(runCtx.ctx.cwd, taskOutputDir), { recursive: true });
+			} catch {
+				// ignore
+			}
+
+			// Write intermediate combined results after each task
+			recomputeScores(combined);
+			fs.writeFileSync(runCtx.evalResultsPath, JSON.stringify(combined, null, 2));
+
+			// Stream progress with per-task score
+			const lastTask = combined.tasks.find((t) => t.number === taskNum);
+			if (lastTask) {
+				const status = lastTask.timed_out ? "TIMEOUT" : lastTask.completed ? "PASS" : "FAIL";
+				runCtx.onUpdate?.({
+					content: [{
+						type: "text",
+						text: `Task ${taskNum} [${lastTask.tier}]: ${status} (${lastTask.score}) — ${completedCount}/${totalTasks} done | Running composite: ${combined.composite_score}`,
+					}],
+				});
 			}
 		}
+
+		// Note: dev server is NOT cleaned up here — it's cached in runtime for reuse
 
 		// Final score recompute
 		recomputeScores(combined);
@@ -513,8 +522,8 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		return buildResponse(combined, runCtx.evalResultsPath, timedOutCount);
 	}
 
-	// ── All-at-once execution ───────────────────────────────────────────
-	// Used for calibrate, variants, or single-task runs.
+	// ── All-at-once execution (variants mode only) ──────────────────────
+	// evaluate.py handles variant generation and convergence analysis internally.
 
 	async function runAllAtOnce(
 		params: Record<string, unknown>,
@@ -522,7 +531,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 	) {
 		const state = getRuntime().state;
 
-		// Issue 7: Delete stale eval_results.json before starting
+		// Delete stale eval_results.json before starting
 		if (fs.existsSync(runCtx.evalResultsPath)) {
 			fs.unlinkSync(runCtx.evalResultsPath);
 		}
@@ -532,28 +541,17 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			useUv: runCtx.useUv,
 			iteration: params.iteration as number,
 			mode: runCtx.mode,
-			task: params.task as number | undefined,
-			tier: params.tier as string | undefined,
 			variantCount: (params.variant_count as number | undefined) ?? 4,
-			maxSteps: params.max_steps as number | undefined,
-			runs: params.runs as number | undefined,
-			skipFeedback: params.skip_feedback as boolean | undefined,
-			requirementsFile: params.requirements_file as string | undefined,
 			outputDir: runCtx.iterDir,
 			screenshotDir: runCtx.screenshotDir,
 			personaCmd: state.personaCmd!,
 		});
 
-		// Estimate task count for timeout — all in milliseconds
-		// NOTE: pi.exec() treats timeout as raw milliseconds
-		const taskNumbers = parsePersonaTaskNumbers(
-			runCtx.ctx.cwd,
-			params.requirements_file as string | undefined,
-		);
-		const numTasks = params.task ? 1 : taskNumbers.length || 7;
-		const maxSteps = (params.max_steps as number | undefined) ?? DEFAULT_MAX_STEPS;
-		const runsMultiplier = runCtx.mode === "calibrate" ? 3 : runCtx.mode === "variants" ? ((params.variant_count as number) || 4) : 2;
-		const timeoutMs = TIMEOUT_BASE_MS + (numTasks * computeTaskTimeoutMs(maxSteps, runsMultiplier));
+		// Estimate timeout: tasks × per-task timeout × variant count
+		const taskNumbers = parsePersonaTaskNumbers(runCtx.ctx.cwd);
+		const numTasks = taskNumbers.length || 7;
+		const variantCount = (params.variant_count as number) || 4;
+		const timeoutMs = TIMEOUT_BASE_MS + (numTasks * computeTaskTimeoutMs(DEFAULT_MAX_STEPS, variantCount));
 
 		runCtx.onUpdate?.({
 			content: [{

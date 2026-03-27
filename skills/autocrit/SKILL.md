@@ -22,12 +22,21 @@ Persona-driven UX evaluation loop: build a prototype, let a synthetic user try i
 
 Dashboard: `ctrl+x` to expand/collapse. `/autocrit` for status.
 
+### Evaluation Discipline
+
+- **One evaluation per iteration.** Call `run_evaluation` once, then `log_iteration`. Do not re-run to "confirm" — trust the score.
+- **Always run all tasks.** Never filter by tier. Tier-filtered evaluations produce misleading composite scores (unrun tiers show as 0).
+- **Task filter is for debugging only.** Only use the `task` parameter after a full evaluation has identified a specific stuck task you need to investigate.
+- **Bundle independent fixes.** If multiple failing tasks have independent fixes (e.g., add a nav item AND move a button), address them in one iteration. The keep/discard protocol handles failure — revert the whole bundle.
+- **Timeouts are not failures.** If a task times out with no feedback, it's an infrastructure issue (LLM latency, agent-browser). Do not re-run. Log the iteration and move on.
+- **Faster iteration with cheaper models.** For faster evaluation cycles, consider using a cheaper/faster model for the persona agent (e.g., `--cmd "claude -p --model haiku"`). The persona agent navigates and clicks — it doesn't need the most capable model.
+
 ## Quick Start
 
 1. Create `persona.md` (see [persona guide](references/examples/persona_example.md))
 2. `init_autocrit` — set mode, experiment name, persona command
 3. Build seed app (Vite project with `.gitignore`)
-4. `run_evaluation` with mode `quick` for baseline (mode `calibrate` for ≤4 tasks)
+4. `run_evaluation` with mode `quick` for baseline
 5. Iterate: edit → `run_evaluation` → `log_iteration` → repeat
 
 ## Setup
@@ -108,7 +117,7 @@ For each prototype branch:
    - `.gitignore` with `node_modules/` and `dist/`
    - Install deps: `pnpm install` or `npm install` (whichever is available)
    - Organize code: `src/index.html`, `src/main.js`, `src/styles.css`, `src/data.js`
-4. Run baseline: `run_evaluation` with iteration=0, mode="quick" (for ≤4 tasks, mode="calibrate" is also fine)
+4. Run baseline: `run_evaluation` with iteration=0, mode="quick"
 5. Call `log_iteration` with the baseline scores (scores auto-read from eval_results.json if omitted)
 
 ### Iterate
@@ -131,7 +140,7 @@ Repeat until a stopping condition:
 
 5. **Check.** Run `npx vp check src/`. Fix lint/format errors. Always target `src/` to avoid linting `node_modules/`.
 
-6. **Evaluate.** Call `run_evaluation` with the current iteration number. Use mode `quick` for fast iteration, or add task/tier filters to focus.
+6. **Evaluate.** Call `run_evaluation` with the current iteration number. Use mode `quick` for fast iteration.
 
 7. **Decide.** Compare scores:
    - Score improved or held → kept=true. Commit changes.
@@ -176,11 +185,11 @@ Present to the user: comparative report, recommendations, bias flags.
 - **Use Vite+ for all apps.** `package.json` with `vite-plus`, `vite.config.js`. Install with `pnpm install` or `npm install`.
 - **Only modify files in `src/`, `package.json`, and `vite.config.js`.**
 - **Always create `.gitignore`** with `node_modules/` and `dist/` before committing.
-- **Each iteration = one coherent change** with a clear thesis.
+- **Each iteration = one coherent change** with a clear thesis — but bundle independent fixes for different tasks into one iteration.
 - **P0 first.** Never work on P1/P2 while P0 tasks fail.
 - **Run `vp check src/` after every edit.** Always target `src/` to avoid linting `node_modules/`.
 - **Score variance is real.** Single-run scores can swing 30+ points on the same code. Don't trust deltas under 15 points from a single quick run. If a task shows a surprising score change, re-run it before making a keep/discard decision.
-- **Timeouts ≠ failures.** If a task times out but passed in a previous iteration with unchanged code, use the previous score. Infrastructure timeouts (LLM latency, agent-browser issues) are flagged separately from UX failures.
+- **Timeouts ≠ failures.** If a task times out but passed in a previous iteration with unchanged code, it's an infrastructure issue (LLM latency, agent-browser). Do not re-run evaluations because of timeouts. Log the iteration and move on.
 - **log_iteration auto-reads scores.** You don't need to manually compute composite/P0/P1/P2 — just pass iteration number, description, and kept. Scores are read from eval_results.json.
 - **Wishlist items are desires, not requirements.** Diagnose root causes.
 - **approach.md is read-only during iteration.** Don't pivot mid-prototype.

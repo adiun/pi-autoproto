@@ -230,8 +230,13 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	// Cleanup on shutdown
+	// Cleanup on shutdown — kill cached dev server and clear UI
 	pi.on("session_shutdown", async (_event, ctx) => {
+		if (runtime.devServerCleanup) {
+			await runtime.devServerCleanup();
+			runtime.devServerPort = null;
+			runtime.devServerCleanup = null;
+		}
 		ctx.ui.setWidget("autocrit", undefined);
 		ctx.ui.setStatus("autocrit", undefined);
 	});
