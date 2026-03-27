@@ -2,16 +2,35 @@
   "name": "pi-autocrit",
   "version": "0.1.0",
   "description": "Persona-driven UX evaluation loop for pi — build prototypes, evaluate with synthetic users, iterate on feedback.",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "license": "MIT",
+  "scripts": {
+    "test": "bash scripts/test.sh",
+    "test:ts": "./node_modules/.bin/tsx --test tests/*.test.ts",
+    "test:py": "cd python && uv run pytest tests/ -v"
+  },
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"]
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
     "@sinclair/typebox": "*"
-  }
+  },
+  "devDependencies": {
+    "@mariozechner/pi-ai": "^0.63.1",
+    "@mariozechner/pi-coding-agent": "^0.63.1",
+    "@mariozechner/pi-tui": "^0.63.1",
+    "@sinclair/typebox": "^0.34.48",
+    "tsx": "^4.21.0"
+  },
+  "type": "module"
 }
