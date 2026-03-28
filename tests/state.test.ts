@@ -49,6 +49,7 @@ describe("createState", () => {
 		assert.strictEqual(s.currentBranch, null);
 		assert.deepStrictEqual(s.iterations, []);
 		assert.strictEqual(s.resultsDir, null);
+		assert.strictEqual(s.startTime, null);
 	});
 });
 
@@ -70,6 +71,7 @@ describe("writeConfig + reconstructState roundtrip", () => {
 		state.personaCmd = "pi -p";
 		state.branches = ["proto-a", "proto-b"];
 		state.resultsDir = "results/test";
+		state.startTime = 1711600000000;
 
 		writeConfig(tmpDir, state);
 		const restored = reconstructState(tmpDir);
@@ -80,6 +82,7 @@ describe("writeConfig + reconstructState roundtrip", () => {
 		assert.strictEqual(restored.personaCmd, "pi -p");
 		assert.deepStrictEqual(restored.branches, ["proto-a", "proto-b"]);
 		assert.strictEqual(restored.resultsDir, "results/test");
+		assert.strictEqual(restored.startTime, 1711600000000);
 	});
 });
 

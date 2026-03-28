@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AutocritState } from "./state.js";
+import type { AutocritState, IterationResult } from "./state.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -187,6 +187,38 @@ export function parsePersonaTaskNumbers(cwd: string, requirementsPath?: string):
 }
 
 // ---------------------------------------------------------------------------
+// Duration formatting
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a duration in milliseconds as a human-readable string.
+ * < 60s: "42s", < 60m: "12m 34s", >= 60m: "1h 23m"
+ */
+export function formatDuration(ms: number): string {
+	if (ms < 0) return "0s";
+	const totalSeconds = Math.floor(ms / 1000);
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+
+	if (hours > 0) {
+		return `${hours}h ${minutes}m`;
+	}
+	if (minutes > 0) {
+		return `${minutes}m ${seconds}s`;
+	}
+	return `${seconds}s`;
+}
+
+/**
+ * Get elapsed milliseconds since session start. Returns 0 if no startTime.
+ */
+export function getElapsedMs(state: AutocritState): number {
+	if (!state.startTime) return 0;
+	return Date.now() - state.startTime;
+}
+
+// ---------------------------------------------------------------------------
 // Score formatting
 // ---------------------------------------------------------------------------
 
@@ -229,4 +261,27 @@ export function appendResultsTsv(resultsDir: string, result: {
 export function appendIterationHistory(resultsDir: string, entry: Record<string, unknown>): void {
 	const historyPath = path.join(resultsDir, "iteration_history.jsonl");
 	fs.appendFileSync(historyPath, JSON.stringify(entry) + "\n");
+}
+
+// ---------------------------------------------------------------------------
+// Sparkline
+// ---------------------------------------------------------------------------
+
+const SPARK_CHARS = "▁▂▃▄▅▆▇█";
+
+/**
+ * Generate a sparkline string from an array of numbers.
+ * Uses Unicode block characters to show a trend.
+ */
+export function sparkline(values: number[]): string {
+	if (values.length === 0) return "";
+	const min = Math.min(...values);
+	const max = Math.max(...values);
+	const range = max - min || 1;
+	return values
+		.map((v) => {
+			const idx = Math.round(((v - min) / range) * (SPARK_CHARS.length - 1));
+			return SPARK_CHARS[idx];
+		})
+		.join("");
 }

@@ -10,6 +10,7 @@ import * as os from "node:os";
 import {
 	buildEvaluateCommand, buildReportCommand, parsePersonaTaskNumbers,
 	formatScoreLine, appendResultsTsv, appendIterationHistory,
+	formatDuration, getElapsedMs, sparkline,
 } from "../extensions/pi-autocrit/utils.js";
 import { createState, type AutocritState } from "../extensions/pi-autocrit/state.js";
 
@@ -21,6 +22,83 @@ beforeEach(() => {
 
 afterEach(() => {
 	fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+// ── formatDuration ──────────────────────────────────────────────────────
+
+describe("formatDuration", () => {
+	it("formats seconds only", () => {
+		assert.strictEqual(formatDuration(42_000), "42s");
+	});
+
+	it("formats minutes and seconds", () => {
+		assert.strictEqual(formatDuration(754_000), "12m 34s");
+	});
+
+	it("formats hours and minutes", () => {
+		assert.strictEqual(formatDuration(4_980_000), "1h 23m");
+	});
+
+	it("handles zero", () => {
+		assert.strictEqual(formatDuration(0), "0s");
+	});
+
+	it("handles negative", () => {
+		assert.strictEqual(formatDuration(-100), "0s");
+	});
+
+	it("handles exactly 60 seconds", () => {
+		assert.strictEqual(formatDuration(60_000), "1m 0s");
+	});
+
+	it("handles exactly 1 hour", () => {
+		assert.strictEqual(formatDuration(3_600_000), "1h 0m");
+	});
+});
+
+// ── getElapsedMs ────────────────────────────────────────────────────────
+
+describe("getElapsedMs", () => {
+	it("returns 0 when startTime is null", () => {
+		const state = createState();
+		assert.strictEqual(getElapsedMs(state), 0);
+	});
+
+	it("returns positive elapsed time", () => {
+		const state = createState();
+		state.startTime = Date.now() - 5000;
+		const elapsed = getElapsedMs(state);
+		assert.ok(elapsed >= 4900 && elapsed <= 6000, `Expected ~5000 but got ${elapsed}`);
+	});
+});
+
+// ── sparkline ───────────────────────────────────────────────────────────
+
+describe("sparkline", () => {
+	it("returns empty string for empty array", () => {
+		assert.strictEqual(sparkline([]), "");
+	});
+
+	it("returns single block for single value", () => {
+		const result = sparkline([50]);
+		assert.strictEqual(result.length, 1);
+	});
+
+	it("returns correct length for multiple values", () => {
+		const result = sparkline([10, 20, 30, 40, 50]);
+		assert.strictEqual(result.length, 5);
+	});
+
+	it("lowest value gets lowest block, highest gets highest", () => {
+		const result = sparkline([0, 100]);
+		assert.strictEqual(result[0], "\u2581"); // lowest block
+		assert.strictEqual(result[1], "\u2588"); // highest block
+	});
+
+	it("equal values produce same block", () => {
+		const result = sparkline([50, 50, 50]);
+		assert.ok(result[0] === result[1] && result[1] === result[2]);
+	});
 });
 
 // ── buildEvaluateCommand ────────────────────────────────────────────────

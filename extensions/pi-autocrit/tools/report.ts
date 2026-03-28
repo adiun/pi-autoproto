@@ -9,7 +9,7 @@ import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AutocritRuntime } from "../state.js";
-import { buildReportCommand, getPythonDir } from "../utils.js";
+import { buildReportCommand, getPythonDir, formatDuration, getElapsedMs } from "../utils.js";
 
 export function registerReportTool(pi: ExtensionAPI, getRuntime: () => AutocritRuntime) {
 	pi.registerTool({
@@ -85,6 +85,13 @@ export function registerReportTool(pi: ExtensionAPI, getRuntime: () => AutocritR
 			responseText += truncation.content;
 			if (truncation.truncated) {
 				responseText += `\n\n[Truncated — read ${reportPath} for full report]`;
+			}
+
+			// Show total session duration
+			const runtime = getRuntime();
+			const elapsed = getElapsedMs(runtime.state);
+			if (elapsed > 0) {
+				responseText += `\n\n⏱ Total autocrit session duration: ${formatDuration(elapsed)}`;
 			}
 
 			return {

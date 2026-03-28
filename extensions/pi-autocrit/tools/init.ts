@@ -67,6 +67,13 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 			state.experimentName = params.experiment_name;
 			state.personaCmd = params.persona_cmd;
 
+			// Preserve existing startTime when resuming, else set now
+			if (existingState.active && existingState.startTime) {
+				state.startTime = existingState.startTime;
+			} else {
+				state.startTime = Date.now();
+			}
+
 			// Reuse existing iterations from autocrit.jsonl
 			if (existingState.active && existingState.iterations.length > 0) {
 				state.iterations = existingState.iterations;

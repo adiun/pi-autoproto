@@ -43,6 +43,8 @@ export interface AutocritState {
 	iterations: IterationResult[];
 	/** Results directory base */
 	resultsDir: string | null;
+	/** Timestamp (ms) when the autocrit session was started */
+	startTime: number | null;
 }
 
 export interface AutocritRuntime {
@@ -67,6 +69,7 @@ export function createState(): AutocritState {
 		currentBranch: null,
 		iterations: [],
 		resultsDir: null,
+		startTime: null,
 	};
 }
 
@@ -95,6 +98,7 @@ export function writeConfig(cwd: string, state: AutocritState): void {
 		personaCmd: state.personaCmd,
 		branches: state.branches,
 		resultsDir: state.resultsDir,
+		startTime: state.startTime,
 	});
 	fs.writeFileSync(jsonlPath, config + "\n");
 }
@@ -126,6 +130,7 @@ export function reconstructState(cwd: string): AutocritState {
 					state.personaCmd = entry.personaCmd ?? null;
 					state.branches = entry.branches ?? [];
 					state.resultsDir = entry.resultsDir ?? null;
+					state.startTime = entry.startTime ?? null;
 				} else if (entry.type === "iteration") {
 					state.iterations.push({
 						iteration: entry.iteration ?? 0,

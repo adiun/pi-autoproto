@@ -18,7 +18,7 @@ import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AutocritRuntime } from "../state.js";
-import { buildEvaluateCommand, getPythonDir, parsePersonaTaskNumbers } from "../utils.js";
+import { buildEvaluateCommand, getPythonDir, parsePersonaTaskNumbers, formatDuration, getElapsedMs } from "../utils.js";
 import {
 	readEvalResults, mergeTaskResult, recomputeScores, computeTaskTimeoutMs,
 	DEFAULT_MAX_STEPS, QUICK_MAX_STEPS, MAX_TASK_TIMEOUT_MS, TIMEOUT_PER_STEP_MS, TASK_OVERHEAD_MS,
@@ -525,6 +525,12 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		}
 
 		responseText += `\nFull results: ${evalResultsPath}`;
+
+		// Show session elapsed time
+		const elapsed = getElapsedMs(getRuntime().state);
+		if (elapsed > 0) {
+			responseText += `\n⏱ Session elapsed: ${formatDuration(elapsed)}`;
+		}
 
 		return {
 			content: [{ type: "text", text: responseText }],

@@ -203,6 +203,110 @@ def generate_report(
         lines.append("")
         lines.append("See the individual version files for full diffs.\n")
 
+    # --- Why Others Didn't Win ---
+    if len(prototypes) >= 2:
+        best = max(prototypes, key=lambda p: p.get("composite_score", 0))
+        losers = [p for p in prototypes if p["_proto_id"] != best["_proto_id"]]
+
+        lines.append("## Why Other Prototypes Didn't Win\n")
+
+        for loser in losers:
+            lines.append(f"### {loser['_proto_name']} ({loser['_proto_id']})\n")
+
+            # Score gap
+            best_score = best.get("composite_score", 0)
+            loser_score = loser.get("composite_score", 0)
+            gap = best_score - loser_score
+            lines.append(f"**Score gap:** {loser_score} vs {best_score} (−{gap:.1f} points)\n")
+
+            # Tier breakdown
+            tier_issues = []
+            for tier_key, tier_label in [("p0_score", "P0"), ("p1_score", "P1"), ("p2_score", "P2")]:
+                best_tier = best.get(tier_key, 0)
+                loser_tier = loser.get(tier_key, 0)
+                delta = best_tier - loser_tier
+                if delta > 5:
+                    tier_issues.append(f"- **{tier_label}:** scored {loser_tier} vs winner's {best_tier} (−{delta:.1f})")
+            if tier_issues:
+                lines.append("**Weaker tiers:**")
+                lines.extend(tier_issues)
+                lines.append("")
+
+            # Task-level analysis: find tasks where this prototype was weaker
+            best_tasks = {t["number"]: t for t in best.get("tasks", [])}
+            loser_tasks = {t["number"]: t for t in loser.get("tasks", [])}
+            failing_tasks = []
+            weaker_tasks = []
+            for num, lt in loser_tasks.items():
+                bt = best_tasks.get(num)
+                if not lt.get("completed", False) and (bt and bt.get("completed", False)):
+                    failing_tasks.append(
+                        f"- Task {num} ({lt.get('tier', '?')}) \"{lt.get('name', '')}\" — "
+                        f"**failed** (winner passed)"
+                    )
+                elif bt and lt.get("score", 0) < bt.get("score", 0) - 10:
+                    weaker_tasks.append(
+                        f"- Task {num} ({lt.get('tier', '?')}) \"{lt.get('name', '')}\" — "
+                        f"scored {lt.get('score', 0)} vs winner's {bt.get('score', 0)}"
+                    )
+
+            if failing_tasks:
+                lines.append("**Failed tasks that winner passed:**")
+                lines.extend(failing_tasks)
+                lines.append("")
+            if weaker_tasks:
+                lines.append("**Significantly weaker tasks (>10pt gap):**")
+                lines.extend(weaker_tasks)
+                lines.append("")
+
+            # Stuck points unique to this prototype
+            loser_stuck = set()
+            for t in loser.get("tasks", []):
+                for sp in t.get("stuck_points", []):
+                    loser_stuck.add(sp)
+            best_stuck = set()
+            for t in best.get("tasks", []):
+                for sp in t.get("stuck_points", []):
+                    best_stuck.add(sp)
+            unique_stuck = loser_stuck - best_stuck
+            if unique_stuck:
+                lines.append("**Unique stuck points (not seen in winner):**")
+                for sp in sorted(unique_stuck):
+                    lines.append(f"- {sp}")
+                lines.append("")
+
+            # Bias flags
+            bias = loser.get("convergence", {}).get("bias_flags", [])
+            if bias:
+                lines.append("**Bias concerns:**")
+                for flag in bias:
+                    lines.append(f"- ⚠️ {flag}")
+                lines.append("")
+
+            # Variant agreement comparison
+            if has_variants:
+                loser_agreement = loser.get("convergence", {}).get("overall_agreement")
+                best_agreement = best.get("convergence", {}).get("overall_agreement")
+                if loser_agreement is not None and best_agreement is not None:
+                    if loser_agreement < best_agreement - 0.05:
+                        lines.append(
+                            f"**Lower variant agreement:** {loser_agreement} vs winner's {best_agreement} "
+                            f"— less consistent experience across persona variants.\n"
+                        )
+
+            # Key negative feedback
+            neg_feedback = []
+            for t in loser.get("tasks", []):
+                fb = t.get("persona_feedback", "")
+                if fb and not t.get("completed", False):
+                    neg_feedback.append(f'- "{fb}" (Task {t["number"]}: {t.get("name", "")})')
+            if neg_feedback:
+                lines.append("**Key persona feedback on failures:**")
+                lines.extend(neg_feedback[:5])  # Limit to 5
+                lines.append("")
+
+        lines.append("")
+
     # --- Recommendations ---
     lines.append("## Recommendations\n")
     if prototypes:

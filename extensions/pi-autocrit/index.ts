@@ -27,7 +27,7 @@ import {
 	isPlateaued,
 	type AutocritRuntime,
 } from "./state.js";
-import { formatScoreLine } from "./utils.js";
+import { formatScoreLine, formatDuration, getElapsedMs } from "./utils.js";
 import { renderCompactWidget, renderExpandedWidget } from "./widget.js";
 import { registerInitTool } from "./tools/init.js";
 import { registerEvaluateTool } from "./tools/evaluate.js";
@@ -219,14 +219,16 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 		}
 
 		const latest = latestIteration(runtime.state);
+		const elapsed = getElapsedMs(runtime.state);
+		const timeStr = elapsed > 0 ? ` │ ⏱ ${formatDuration(elapsed)}` : "";
 		if (latest) {
 			const plateauFlag = isPlateaued(runtime.state) ? " ⚠️" : "";
 			ctx.ui.setStatus(
 				"autocrit",
-				ctx.ui.theme.fg("accent", `🎯 iter ${latest.iteration} │ ${latest.composite.toFixed(1)}${plateauFlag}`),
+				ctx.ui.theme.fg("accent", `🎯 iter ${latest.iteration} │ ${latest.composite.toFixed(1)}${plateauFlag}${timeStr}`),
 			);
 		} else {
-			ctx.ui.setStatus("autocrit", ctx.ui.theme.fg("dim", "🎯 autocrit"));
+			ctx.ui.setStatus("autocrit", ctx.ui.theme.fg("dim", `🎯 autocrit${timeStr}`));
 		}
 	});
 

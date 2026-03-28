@@ -66,6 +66,143 @@ class TestGenerateReportFull:
 
 
 # ---------------------------------------------------------------------------
+# 1b. "Why Others Didn't Win" section
+# ---------------------------------------------------------------------------
+
+class TestWhyOthersDidntWin:
+    def test_section_present_with_multiple_prototypes(self, tmp_experiment_dir):
+        report = generate_report(tmp_experiment_dir)
+        assert "## Why Other Prototypes Didn't Win" in report
+
+    def test_section_names_losing_prototype(self, tmp_experiment_dir):
+        report = generate_report(tmp_experiment_dir)
+        # proto-b is the loser (72.0 < 85.0)
+        assert "proto-b" in report.split("Why Other Prototypes Didn't Win")[1]
+
+    def test_shows_score_gap(self, tmp_experiment_dir):
+        report = generate_report(tmp_experiment_dir)
+        section = report.split("Why Other Prototypes Didn't Win")[1]
+        # Gap is 85.0 - 72.0 = 13.0
+        assert "13.0" in section
+
+    def test_shows_bias_concerns_for_loser(self, tmp_experiment_dir):
+        report = generate_report(tmp_experiment_dir)
+        section = report.split("Why Other Prototypes Didn't Win")[1]
+        # proto-b has bias flags
+        assert "Bias concerns" in section
+        assert "Possible positive bias" in section
+
+    def test_shows_lower_variant_agreement(self, tmp_experiment_dir):
+        report = generate_report(tmp_experiment_dir)
+        section = report.split("Why Other Prototypes Didn't Win")[1]
+        # proto-b agreement 0.85 < proto-a 0.92
+        assert "Lower variant agreement" in section
+
+    def test_not_present_with_single_prototype(self):
+        """Section should not appear with only one prototype."""
+        with tempfile.TemporaryDirectory() as d:
+            proto_dir = os.path.join(d, "proto-x")
+            os.makedirs(proto_dir)
+            data = {
+                "composite_score": 70.0,
+                "p0_score": 80.0, "p1_score": 60.0, "p2_score": 50.0,
+                "tasks": [{
+                    "number": 1, "name": "Test", "tier": "P0",
+                    "completed": True, "score": 80.0, "steps": 2,
+                    "stuck_points": [], "found_answer": "42",
+                    "notes": "", "persona_feedback": "OK.",
+                    "wishlist": [],
+                }],
+            }
+            with open(os.path.join(proto_dir, "eval_results.json"), "w") as f:
+                json.dump(data, f)
+
+            report = generate_report(d)
+            assert "Why Other Prototypes Didn't Win" not in report
+
+
+class TestWhyOthersTaskLevel:
+    """Test task-level analysis in the 'Why Others Didn't Win' section."""
+
+    def test_shows_failed_tasks_that_winner_passed(self):
+        with tempfile.TemporaryDirectory() as d:
+            # Winner: proto-a passes task 1
+            proto_a = os.path.join(d, "proto-a")
+            os.makedirs(proto_a)
+            with open(os.path.join(proto_a, "eval_results.json"), "w") as f:
+                json.dump({
+                    "composite_score": 90.0, "p0_score": 100.0,
+                    "p1_score": 80.0, "p2_score": 70.0,
+                    "tasks": [{
+                        "number": 1, "name": "Core task", "tier": "P0",
+                        "completed": True, "score": 100.0, "steps": 2,
+                        "stuck_points": [], "found_answer": "yes",
+                        "notes": "", "persona_feedback": "Great!",
+                        "wishlist": [],
+                    }],
+                }, f)
+
+            # Loser: proto-b fails task 1
+            proto_b = os.path.join(d, "proto-b")
+            os.makedirs(proto_b)
+            with open(os.path.join(proto_b, "eval_results.json"), "w") as f:
+                json.dump({
+                    "composite_score": 40.0, "p0_score": 0.0,
+                    "p1_score": 80.0, "p2_score": 70.0,
+                    "tasks": [{
+                        "number": 1, "name": "Core task", "tier": "P0",
+                        "completed": False, "score": 0.0, "steps": 10,
+                        "stuck_points": ["Couldn't find the button"],
+                        "found_answer": None,
+                        "notes": "Gave up",
+                        "persona_feedback": "I couldn't figure it out.",
+                        "wishlist": [],
+                    }],
+                }, f)
+
+            report = generate_report(d)
+            section = report.split("Why Other Prototypes Didn't Win")[1]
+            assert "failed" in section.lower()
+            assert "Core task" in section
+
+    def test_shows_unique_stuck_points(self):
+        with tempfile.TemporaryDirectory() as d:
+            proto_a = os.path.join(d, "proto-a")
+            os.makedirs(proto_a)
+            with open(os.path.join(proto_a, "eval_results.json"), "w") as f:
+                json.dump({
+                    "composite_score": 80.0, "p0_score": 90.0,
+                    "p1_score": 70.0, "p2_score": 60.0,
+                    "tasks": [{
+                        "number": 1, "name": "Task", "tier": "P0",
+                        "completed": True, "score": 90.0, "steps": 3,
+                        "stuck_points": [], "found_answer": "yes",
+                        "notes": "", "persona_feedback": "", "wishlist": [],
+                    }],
+                }, f)
+
+            proto_b = os.path.join(d, "proto-b")
+            os.makedirs(proto_b)
+            with open(os.path.join(proto_b, "eval_results.json"), "w") as f:
+                json.dump({
+                    "composite_score": 50.0, "p0_score": 60.0,
+                    "p1_score": 40.0, "p2_score": 30.0,
+                    "tasks": [{
+                        "number": 1, "name": "Task", "tier": "P0",
+                        "completed": True, "score": 60.0, "steps": 8,
+                        "stuck_points": ["Navigation was confusing"],
+                        "found_answer": "yes",
+                        "notes": "", "persona_feedback": "", "wishlist": [],
+                    }],
+                }, f)
+
+            report = generate_report(d)
+            section = report.split("Why Other Prototypes Didn't Win")[1]
+            assert "Unique stuck points" in section
+            assert "Navigation was confusing" in section
+
+
+# ---------------------------------------------------------------------------
 # 2. generate_report() with empty dir (no proto-* dirs)
 # ---------------------------------------------------------------------------
 
