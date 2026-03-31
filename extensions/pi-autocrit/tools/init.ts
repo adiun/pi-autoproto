@@ -9,7 +9,7 @@ import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createState, reconstructState, writeConfig, type AutocritRuntime, type AutocritState } from "../state.js";
-import { checkDependencies, formatDependencyReport, getPythonDir } from "../utils.js";
+import { checkDependencies, formatDependencyReport, getPythonDir, installPlaywrightChromium } from "../utils.js";
 
 export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRuntime) {
 	pi.registerTool({
@@ -67,6 +67,23 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 					content: [{ type: "text", text: `❌ Missing dependencies:\n\n${depReport}\n\nInstall the missing dependencies and try again.` }],
 					details: { dependencies: deps },
 				};
+			}
+
+			// Auto-install chromium for playwright-cli if needed (Issue 4: version mismatch).
+			// playwright-cli bundles its own Playwright version which may differ from any
+			// project-local Playwright. We must install chromium for the CLI's version.
+			let chromiumInstallNote = "";
+			if (browserBackendName === "playwright-cli" && !deps.browserChromiumInstalled) {
+				const installResult = await installPlaywrightChromium((cmd, args) => pi.exec(cmd, args));
+				if (installResult.success) {
+					deps.browserChromiumInstalled = true;
+					chromiumInstallNote = `\n✅ Auto-installed chromium for playwright-cli (${installResult.message})`;
+				} else {
+					return {
+						content: [{ type: "text", text: `❌ playwright-cli is installed but chromium is missing and auto-install failed:\n${installResult.message}\n\nManual fix:\n  CLI_PKG=$(node -e "console.log(require.resolve('@playwright/cli/package.json'))")\n  node $(dirname $CLI_PKG)/node_modules/playwright/cli.js install chromium` }],
+						details: { dependencies: deps },
+					};
+				}
 			}
 
 			// Check for persona.md
@@ -145,7 +162,11 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 			response += `Results: ${state.resultsDir}\n`;
 			response += `Python runner: ${runner}\n`;
 			response += `Python scripts: ${pythonDir}\n\n`;
-			response += `Dependencies:\n${depReport}\n\n`;
+			response += `Dependencies:\n${depReport}\n`;
+			if (chromiumInstallNote) {
+				response += chromiumInstallNote + "\n";
+			}
+			response += "\n";
 
 			if (params.mode === "full") {
 				response += "Next steps:\n";

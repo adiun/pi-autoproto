@@ -17,13 +17,14 @@ const __dirname = path.dirname(__filename);
 export interface DependencyStatus {
 	browserBackend: boolean;
 	browserBackendName: string;
+	browserChromiumInstalled: boolean;
 	uv: boolean;
 	python3: boolean;
 	git: boolean;
 }
 
 export async function checkDependencies(
-	exec: (cmd: string, args: string[]) => Promise<{ code: number | null }>,
+	exec: (cmd: string, args: string[]) => Promise<{ code: number | null; stdout?: string; stderr?: string }>,
 	browserBackendName: string = "agent-browser",
 ): Promise<DependencyStatus> {
 	const check = async (cmd: string, args: string[]): Promise<boolean> => {
@@ -35,13 +36,121 @@ export async function checkDependencies(
 		}
 	};
 
+	const backendInstalled = await check("which", [browserBackendName]);
+
+	// For playwright-cli, verify chromium is actually installed for the CLI's
+	// bundled Playwright version (see Issue 4 in playwright-cli-issues.md).
+	let chromiumInstalled = true;
+	if (browserBackendName === "playwright-cli" && backendInstalled) {
+		chromiumInstalled = await checkPlaywrightChromium(exec);
+	}
+
 	return {
-		browserBackend: await check("which", [browserBackendName]),
+		browserBackend: backendInstalled,
 		browserBackendName,
+		browserChromiumInstalled: chromiumInstalled,
 		uv: await check("which", ["uv"]),
 		python3: await check("which", ["python3"]),
 		git: await check("which", ["git"]),
 	};
+}
+
+/**
+ * Check if chromium is installed for playwright-cli's bundled Playwright version.
+ * Runs a quick `playwright-cli` command with PLAYWRIGHT_MCP_BROWSER=chromium to verify.
+ */
+async function checkPlaywrightChromium(
+	exec: (cmd: string, args: string[]) => Promise<{ code: number | null; stdout?: string; stderr?: string }>,
+): Promise<boolean> {
+	try {
+		// Use `playwright-cli browser-status` or a lightweight probe.
+		// The simplest reliable check: try to open and immediately close.
+		const result = await exec("bash", [
+			"-c",
+			"PLAYWRIGHT_MCP_BROWSER=chromium playwright-cli -s=__chromium_check open about:blank 2>&1",
+		]);
+		const output = (result.stdout ?? "") + (result.stderr ?? "");
+		// If chromium is missing, the output will contain "not found" or "install"
+		if (output.includes("not found") || output.includes("Run \"npx playwright install") || output.includes("is not found")) {
+			return false;
+		}
+		// Also check exit code — non-zero with install message means missing
+		if (result.code !== 0 && output.toLowerCase().includes("install")) {
+			return false;
+		}
+		// Clean up the probe session
+		try { await exec("bash", ["-c", "playwright-cli -s=__chromium_check close 2>/dev/null"]); } catch { /* ignore */ }
+		return result.code === 0;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Resolve the path to playwright-cli's bundled `playwright/cli.js`.
+ * This is needed because `npx playwright install chromium` installs for the
+ * project-local Playwright, not the one bundled with @playwright/cli.
+ */
+export async function resolvePlaywrightCliJsPath(
+	exec: (cmd: string, args: string[]) => Promise<{ code: number | null; stdout?: string }>,
+): Promise<string | null> {
+	try {
+		// Resolve the playwright-cli binary location, then navigate to its node_modules
+		const result = await exec("bash", [
+			"-c",
+			"node -e \"console.log(require.resolve('@playwright/cli/package.json'))\"",
+		]);
+		if (result.code !== 0 || !result.stdout?.trim()) {
+			// Fallback: resolve from the binary symlink
+			const whichResult = await exec("bash", [
+				"-c",
+				"realpath $(which playwright-cli) 2>/dev/null || readlink -f $(which playwright-cli) 2>/dev/null",
+			]);
+			if (whichResult.code !== 0 || !whichResult.stdout?.trim()) return null;
+			const binPath = whichResult.stdout.trim();
+			// Navigate: bin -> package root -> node_modules/playwright/cli.js
+			const pkgRoot = path.resolve(path.dirname(binPath), "..");
+			const cliJs = path.join(pkgRoot, "node_modules", "playwright", "cli.js");
+			return fs.existsSync(cliJs) ? cliJs : null;
+		}
+		const pkgJson = result.stdout.trim();
+		const pkgDir = path.dirname(pkgJson);
+		const cliJs = path.join(pkgDir, "node_modules", "playwright", "cli.js");
+		return fs.existsSync(cliJs) ? cliJs : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Install chromium for playwright-cli's bundled Playwright version.
+ * Returns true on success.
+ */
+export async function installPlaywrightChromium(
+	exec: (cmd: string, args: string[]) => Promise<{ code: number | null; stdout?: string; stderr?: string }>,
+): Promise<{ success: boolean; message: string }> {
+	const cliJs = await resolvePlaywrightCliJsPath(exec);
+	if (!cliJs) {
+		return {
+			success: false,
+			message: "Could not resolve playwright-cli's bundled Playwright path. "
+				+ "Manual fix: find the CLI's node_modules and run: node <path>/playwright/cli.js install chromium",
+		};
+	}
+
+	try {
+		const result = await exec("node", [cliJs, "install", "chromium"]);
+		const output = (result.stdout ?? "") + (result.stderr ?? "");
+		if (result.code === 0) {
+			return { success: true, message: `Installed chromium via ${cliJs}` };
+		}
+		return {
+			success: false,
+			message: `chromium install failed (exit ${result.code}): ${output.slice(0, 300)}`,
+		};
+	} catch (e) {
+		return { success: false, message: `chromium install error: ${e}` };
+	}
 }
 
 export function formatDependencyReport(deps: DependencyStatus): string {
@@ -51,12 +160,15 @@ export function formatDependencyReport(deps: DependencyStatus): string {
 
 	lines.push(`${deps.git ? ok : fail} git`);
 	lines.push(`${deps.browserBackend ? ok : fail} ${deps.browserBackendName}`);
+	if (deps.browserBackendName === "playwright-cli" && deps.browserBackend) {
+		lines.push(`${deps.browserChromiumInstalled ? ok : "⚠️"} chromium (for playwright-cli)`);
+	}
 	lines.push(`${deps.uv ? ok : fail} uv (Python package manager)`);
 	if (!deps.uv) {
 		lines.push(`${deps.python3 ? ok : fail} python3 (fallback)`);
 	}
 
-	const allGood = deps.git && deps.browserBackend && (deps.uv || deps.python3);
+	const allGood = deps.git && deps.browserBackend && deps.browserChromiumInstalled && (deps.uv || deps.python3);
 	if (!allGood) {
 		lines.push("");
 		lines.push("Missing dependencies:");
@@ -66,6 +178,10 @@ export function formatDependencyReport(deps: DependencyStatus): string {
 			} else {
 				lines.push("  agent-browser: npm install -g agent-browser && agent-browser install");
 			}
+		} else if (deps.browserBackendName === "playwright-cli" && !deps.browserChromiumInstalled) {
+			lines.push("  chromium: init_autocrit will auto-install, or manually:");
+			lines.push("    CLI_PKG=$(node -e \"console.log(require.resolve('@playwright/cli/package.json'))\")");
+			lines.push("    node $(dirname $CLI_PKG)/node_modules/playwright/cli.js install chromium");
 		}
 		if (!deps.uv && !deps.python3) {
 			lines.push("  uv: curl -LsSf https://astral.sh/uv/install.sh | sh");

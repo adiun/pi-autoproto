@@ -59,7 +59,7 @@ Then `/reload` in pi.
 1. [pi](https://pi.dev/)
 2. A browser backend (one of):
    - [agent-browser](https://github.com/vercel-labs/agent-browser): `npm install -g agent-browser && agent-browser install` (default, vision mode)
-   - [playwright-cli](https://github.com/microsoft/playwright-cli): `npm install -g @playwright/cli@latest` (text/snapshot mode)
+   - [playwright-cli](https://github.com/microsoft/playwright-cli): `npm install -g @playwright/cli@latest` (text/snapshot mode). After installing, run `bash scripts/setup.sh` with `AUTOCRIT_BROWSER_BACKEND=playwright-cli` to auto-install chromium for the correct Playwright version. Alternatively, `init_autocrit` will auto-install chromium on first use.
 3. [uv](https://docs.astral.sh/uv/): `curl -LsSf https://astral.sh/uv/install.sh | sh`
 4. An API key for your preferred LLM provider (configured in pi)
 
