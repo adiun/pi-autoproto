@@ -23,29 +23,39 @@ Alex is a 28-year-old server at a mid-range Italian restaurant in Austin, TX. Wo
 
 ### P0 — Core (weight: 0.60)
 
-#### Task 1: Basic tip calculation
+#### Task 1: Quick split after a long shift
 
 - type: computation
-- goal: Calculate a 20% tip on a $50.00 bill
+- goal: The bill is $85.00. You and 2 coworkers want to split it evenly with 20% tip. Get each person's amount as fast as possible — you're exhausted and just want to Venmo and leave.
 - success_criteria:
-  - Tip amount of $10.00 is displayed
-  - Total with tip ($60.00) is displayed
-- evaluation_method: task_completion
-- correct_answer: Tip: $10.00, Total: $60.00
+  - Per-person amount is displayed and approximately $34.00
+  - The persona reached the answer without re-entering data or doing mental math
+  - The flow felt fast (3 taps or fewer after entering the bill)
+- evaluation_method: output_review
 
-#### Task 2: Bill splitting
+#### Task 2: Uneven split with drinks
 
 - type: computation
-- goal: Calculate a 20% tip on an $85.00 bill and split the total evenly between 3 people
+- goal: The bill is $120.00 split 4 ways, but 2 people had cocktails ($15 each) and 2 didn't. Everyone agrees on 20% tip. Figure out a fair split where the drinkers pay more. What does each person owe?
 - success_criteria:
-  - Per-person amount is displayed
-  - Amount is approximately $34.00
-- evaluation_method: task_completion
-- correct_answer: $34.00 per person
+  - The persona found a way to handle the uneven split (not just $120/4)
+  - The persona articulated what each person owes, or explained what the app couldn't do
+  - If the app doesn't support uneven splits, the persona's feedback describes the gap clearly
+- evaluation_method: output_review
 
 ### P1 — Important (weight: 0.25)
 
-#### Task 3: Handle bad input
+#### Task 3: Settle the tip debate
+
+- type: navigation
+- goal: Someone at the table suggests 15% tip, but you think that's low for a sit-down meal. Use the app to show the group the difference between 15%, 18%, and 20% on your $85 bill split 3 ways — make the case for 20% without doing mental math.
+- success_criteria:
+  - The persona can compare at least two tip percentages without re-entering the bill
+  - The per-person difference between options is visible or easy to articulate
+  - The persona could use this as a persuasion tool ("it's only $X more per person")
+- evaluation_method: output_review
+
+#### Task 4: Handle bad input
 
 - type: navigation
 - goal: Enter "abc" as the bill amount and see what happens
@@ -54,39 +64,30 @@ Alex is a 28-year-old server at a mid-range Italian restaurant in Austin, TX. Wo
   - Some kind of error feedback is shown to the user
 - evaluation_method: output_review
 
-#### Task 4: Custom tip percentage
-
-- type: computation
-- goal: Calculate a 25% tip on a $40.00 bill
-- success_criteria:
-  - Tip amount of $10.00 is displayed
-  - User can choose or enter a custom tip percentage
-- evaluation_method: task_completion
-- correct_answer: Tip: $10.00, Total: $50.00
-
 ### P2 — Nice to have (weight: 0.15)
 
-#### Task 5: Suggested tip amounts
+#### Task 5: Pre-tax tip
+
+- type: computation
+- goal: Your coworker points out the $85 bill includes $6.50 in tax and you shouldn't tip on tax. Figure out the tip on the pre-tax amount ($78.50) at 20% and what that changes for each person's share split 3 ways.
+- success_criteria:
+  - The persona found a way to calculate tip on a pre-tax amount
+  - The difference from the tax-included calculation is visible or articulable
+  - If the app doesn't support pre-tax, the persona's feedback describes the frustration
+- evaluation_method: output_review
+
+#### Task 6: Quick preset for the usual
 
 - type: navigation
-- goal: See quick-select buttons for common tip percentages (15%, 18%, 20%, 25%)
+- goal: See quick-select buttons for common tip percentages (15%, 18%, 20%, 25%). Pick 20% without typing.
 - success_criteria:
   - At least 3 preset tip percentage options are visible without scrolling
   - Clicking one calculates the tip without needing to type the percentage
 - evaluation_method: output_review
 
-#### Task 6: Compare tip options to decide
-
-- type: computation
-- goal: You have a $120 bill split 4 ways. Compare what each person would pay at 15%, 18%, and 20% tip to decide which to suggest to the group
-- success_criteria:
-  - Per-person amounts for at least two different tip percentages are visible simultaneously or easy to compare
-  - User can switch between options without re-entering the bill amount and split count
-- evaluation_method: output_review
-
 ## Scoring
 
-composite = (p0*score * 0.60) + (p1*score * 0.25) + (p2_score \* 0.15)
+composite = (p0_score * 0.60) + (p1_score * 0.25) + (p2_score * 0.15)
 If any P0 task scores 0: composite = min(composite, 40)
 
 Per-task scoring:

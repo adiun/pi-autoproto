@@ -57,8 +57,38 @@ If `persona.md` does NOT exist:
    - Include anti-tasks (things the persona would NOT do)
    - Write agent_instructions that capture the persona's personality and patience level
    - **Background must be 4-6 paragraphs** including: day-to-day activities, current workarounds, pain points (3-5 specific frustrations), and why this app matters to them
-   - **Task design matters for UX quality.** At least 2 P0 tasks should require the persona to _do something_ with the data — make a decision, compare options, adjust parameters — not just find and read information
+   - **Task design matters for UX quality.** Follow the task design principles below.
 5. Show it to the user for review.
+
+#### Task Design Principles
+
+Tasks are the most important part of the persona file. Weak tasks produce false confidence — any reasonable prototype will score 90+ if the tasks only check whether information is displayed. Strong tasks surface real UX problems.
+
+1. **Tasks should require judgment, not just navigation.** If the success criterion is "is X displayed?", the task is too easy and any prototype will pass. At least 2 P0 tasks should end with the persona making a decision or forming an opinion.
+   - Weak: "See total spending broken down by category."
+   - Strong: "You're $800 shorter than expected this month. Figure out what happened and what you'd cut."
+
+2. **Embed competing constraints.** Real users juggle multiple goals simultaneously. Single-axis tasks ("filter by X") always pass. Tasks with 2-3 constraints surface whether the app helps resolve tradeoffs.
+   - Weak: "Filter recipes to under 30 minutes."
+   - Strong: "Find a recipe under 30 minutes that uses your chicken before it goes bad and that your picky kid will eat."
+
+3. **Use the persona's backstory as task context.** The background section exists for a reason — reference it in tasks. "Your kid is picky," "your income is irregular," "your partner disagrees." This grounds feedback in the persona's reality.
+
+4. **Include at least one 'what would you do?' task.** Not "can you find X?" but "given what you see, what's your next move?" This tests whether the app empowers action, not just displays information.
+   - Weak: "See a list of all subscriptions."
+   - Strong: "You need to cut $50/month from subscriptions. Netflix and Spotify stay. What do you cancel?"
+
+5. **Ambiguity is a feature.** If there's exactly one correct answer verifiable by string matching, the task is a unit test, not a UX evaluation. The most valuable feedback comes from tasks where the "right answer" depends on the persona's priorities and the app's framing.
+
+6. **Use `output_review` for judgment tasks.** `task_completion` (binary pass/fail) works for mechanical tasks like "calculate 20% of $50." For synthesis/decision tasks, `output_review` with qualitative success criteria ("the persona articulated a clear recommendation with reasoning") produces richer signal.
+
+A useful complexity spectrum:
+- **Level 1-2 (Find/Filter):** "See the chart," "filter by time" → any prototype passes these
+- **Level 3 (Compare):** "Compare two options side by side" → tests layout
+- **Level 4 (Synthesize):** "Figure out why X happened" → tests information flow
+- **Level 5 (Decide):** "Given your constraints, choose what to do" → tests whether the app is actually useful
+
+Aim for at least 1 P0 and 1 P1 task at Level 4-5.
 
 ### 2. Verify Inputs
 
