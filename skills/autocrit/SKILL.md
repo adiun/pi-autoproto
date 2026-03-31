@@ -168,19 +168,26 @@ Repeat until a stopping condition:
    - Consider different UI patterns, not just incremental tweaks
    - Analyze wishlist items: what's the underlying need?
 
-4. **Edit.** Make the change to files in `src/`. Keep changes small — one logical improvement per iteration.
+4. **Write plan.** Create `results/iter_N/plan.md` (where N is the upcoming iteration number) with:
+   - **Score summary:** Per-task scores from the previous iteration — task number, tier, score, pass/fail
+   - **Feedback analysis:** Key persona feedback and stuck points for each failing or low-scoring task
+   - **Changes planned:** What you're changing and why, connecting each change to specific persona feedback
+   - **Expected impact:** Which tasks should improve and by roughly how much
+   - This plan is written *before* making any code changes. It documents your reasoning and serves as a record of intent for each iteration.
 
-5. **Check.** Run `npx vp check src/`. Fix lint/format errors. Always target `src/` to avoid linting `node_modules/`.
+5. **Edit.** Make the change to files in `src/`. Keep changes small — one logical improvement per iteration.
 
-6. **Evaluate.** Call `run_evaluation` with the current iteration number. Use mode `quick` for fast iteration.
+6. **Check.** Run `npx vp check src/`. Fix lint/format errors. Always target `src/` to avoid linting `node_modules/`.
 
-7. **Decide.** Compare scores:
+7. **Evaluate.** Call `run_evaluation` with the current iteration number. Use mode `quick` for fast iteration.
+
+8. **Decide.** Compare scores:
    - Score improved or held → kept=true. Commit changes.
    - Score dropped → kept=false. Revert: `git checkout -- src/ package.json vite.config.js`
 
-8. **Record.** Call `log_iteration` with the iteration number, description, and kept/discarded. Scores are auto-read from eval_results.json — no need to compute manually.
+9. **Record.** Call `log_iteration` with the iteration number, description, and kept/discarded. Scores are auto-read from eval_results.json — no need to compute manually.
 
-9. **Report.** Tell the user: "Iteration N: <description>. Score: X → Y. [Kept/Discarded]."
+10. **Report.** Tell the user: "Iteration N: <description>. Score: X → Y. [Kept/Discarded]."
 
 ### Stopping Conditions
 

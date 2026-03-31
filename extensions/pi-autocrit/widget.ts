@@ -9,6 +9,25 @@ import { currentBranchIterations, bestIteration } from "./state.js";
 import { formatDuration, getElapsedMs, sparkline } from "./utils.js";
 
 // ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface IterationFeedbackData {
+	iteration: number;
+	tasks: Array<{
+		number: number;
+		name: string;
+		tier: string;
+		completed: boolean;
+		score: number;
+		persona_feedback: string;
+		stuck_points: string[];
+		wishlist: string[];
+		timed_out?: boolean;
+	}>;
+}
+
+// ---------------------------------------------------------------------------
 // Compact one-liner widget
 // ---------------------------------------------------------------------------
 
@@ -68,13 +87,12 @@ export function renderCompactWidget(state: AutocritState, theme: Theme): Text {
 // Expanded dashboard
 // ---------------------------------------------------------------------------
 
-export function renderExpandedWidget(state: AutocritState, theme: Theme): Text {
+function renderExpandedLines(state: AutocritState, theme: Theme, hint: string): string[] {
 	const width = process.stdout.columns || 120;
 	const lines: string[] = [];
 
 	// ── Header bar ──────────────────────────────────────────────────────
 	const label = `🎯 autocrit${state.experimentName ? `: ${state.experimentName}` : ""}`;
-	const hint = " ctrl+x collapse ";
 	const fillLen = Math.max(0, width - 3 - 1 - label.length - 1 - hint.length);
 	lines.push(
 		truncateToWidth(
@@ -134,7 +152,7 @@ export function renderExpandedWidget(state: AutocritState, theme: Theme): Text {
 	if (iters.length === 0) {
 		lines.push(`  ${theme.fg("dim", "No iterations yet — run run_evaluation to get started.")}`);
 		lines.push("");
-		return new Text(lines.join("\n"), 0, 0);
+		return lines;
 	}
 
 	// ── Table header ────────────────────────────────────────────────────
@@ -184,9 +202,9 @@ export function renderExpandedWidget(state: AutocritState, theme: Theme): Text {
 			const prev = iters[i - 1];
 			const delta = r.composite - prev.composite;
 			if (delta > 0) {
-				deltaStr = theme.fg("success", `+${delta.toFixed(1)}`).padEnd(col.delta);
+				deltaStr = theme.fg("success", `+${delta.toFixed(1)}`.padEnd(col.delta));
 			} else if (delta < 0) {
-				deltaStr = theme.fg("error", delta.toFixed(1)).padEnd(col.delta);
+				deltaStr = theme.fg("error", `${delta.toFixed(1)}`.padEnd(col.delta));
 			}
 		}
 
@@ -230,6 +248,164 @@ export function renderExpandedWidget(state: AutocritState, theme: Theme): Text {
 	}
 
 	lines.push("");
+
+	return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Expanded dashboard
+// ---------------------------------------------------------------------------
+
+export function renderExpandedWidget(state: AutocritState, theme: Theme): Text {
+	const lines = renderExpandedLines(state, theme, " ctrl+x detail ");
+	return new Text(lines.join("\n"), 0, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Fullscreen dashboard with persona feedback
+// ---------------------------------------------------------------------------
+
+export function renderFullscreenWidget(
+	state: AutocritState,
+	theme: Theme,
+	feedbackData: IterationFeedbackData[],
+): Text {
+	const lines = renderExpandedLines(state, theme, " ctrl+x collapse ");
+	const width = process.stdout.columns || 120;
+
+	// Remove trailing empty lines from expanded section
+	while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+		lines.pop();
+	}
+	lines.push("");
+
+	// ── Persona Feedback section ────────────────────────────────────────
+	const sectionLabel = "Persona Feedback";
+	const sectionFill = Math.max(0, width - 6 - sectionLabel.length - 2);
+	lines.push(
+		truncateToWidth(
+			`  ${theme.fg("borderMuted", "─── ")}${theme.fg("accent", sectionLabel)}${theme.fg("borderMuted", " " + "─".repeat(sectionFill))}`,
+			width,
+		),
+	);
+	lines.push("");
+
+	if (feedbackData.length === 0) {
+		lines.push(`  ${theme.fg("dim", "No evaluation feedback available. Run run_evaluation to get started.")}`);
+		lines.push("");
+		return new Text(lines.join("\n"), 0, 0);
+	}
+
+	// Collect all tasks across iterations, preserving order
+	const taskMap = new Map<number, {
+		name: string;
+		tier: string;
+		entries: Array<{
+			iteration: number;
+			score: number;
+			completed: boolean;
+			timedOut: boolean;
+			feedback: string;
+			stuckPoints: string[];
+			wishlist: string[];
+		}>;
+	}>();
+
+	for (const iterData of feedbackData) {
+		for (const task of iterData.tasks) {
+			if (!taskMap.has(task.number)) {
+				taskMap.set(task.number, {
+					name: task.name,
+					tier: task.tier,
+					entries: [],
+				});
+			}
+			taskMap.get(task.number)!.entries.push({
+				iteration: iterData.iteration,
+				score: task.score,
+				completed: task.completed,
+				timedOut: task.timed_out ?? false,
+				feedback: task.persona_feedback,
+				stuckPoints: task.stuck_points,
+				wishlist: task.wishlist,
+			});
+		}
+	}
+
+	// Render per-task feedback
+	const maxEntries = 5;
+
+	for (const [taskNum, task] of taskMap) {
+		const latestEntry = task.entries[task.entries.length - 1];
+		const latestStatus = latestEntry.timedOut ? "TIMEOUT" : latestEntry.completed ? "PASS" : "FAIL";
+		const latestColor: Parameters<typeof theme.fg>[0] = latestEntry.completed
+			? "success" : latestEntry.timedOut ? "warning" : "error";
+
+		lines.push(
+			truncateToWidth(
+				`  ${theme.fg("accent", `Task ${taskNum}`)} ${theme.fg("dim", `[${task.tier}]`)} ` +
+				`${theme.fg("text", `"${task.name}"`)} — ${theme.fg(latestColor, latestStatus)}`,
+				width,
+			),
+		);
+
+		// Show entries from recent iterations
+		const startIdx = Math.max(0, task.entries.length - maxEntries);
+		if (startIdx > 0) {
+			lines.push(`    ${theme.fg("dim", `… ${startIdx} earlier iteration${startIdx === 1 ? "" : "s"}`)}`);
+		}
+
+		for (let i = startIdx; i < task.entries.length; i++) {
+			const entry = task.entries[i];
+			const status = entry.timedOut ? "TIMEOUT" : entry.completed ? "PASS" : "FAIL";
+			const color: Parameters<typeof theme.fg>[0] = entry.completed
+				? "success" : entry.timedOut ? "warning" : "error";
+
+			const iterLabel = `iter ${String(entry.iteration).padStart(2)}`;
+			const scoreLabel = `${String(entry.score).padStart(3)} ${status.padEnd(7)}`;
+			const prefixLen = 4 + iterLabel.length + 2 + scoreLabel.length + 3;
+			const feedbackWidth = Math.max(20, width - prefixLen);
+
+			let feedbackStr = entry.feedback
+				? entry.feedback.replace(/\n/g, " ").trim()
+				: "(no feedback)";
+			if (feedbackStr.length > feedbackWidth) {
+				feedbackStr = feedbackStr.substring(0, feedbackWidth - 1) + "…";
+			}
+
+			lines.push(
+				truncateToWidth(
+					`    ${theme.fg("dim", iterLabel)} ${theme.fg(color, `(${scoreLabel})`)}: ` +
+					`${theme.fg("muted", feedbackStr)}`,
+					width,
+				),
+			);
+		}
+
+		// Stuck points from latest
+		if (latestEntry.stuckPoints && latestEntry.stuckPoints.length > 0) {
+			lines.push(
+				truncateToWidth(
+					`    ${theme.fg("error", "Stuck:")} ${theme.fg("muted", latestEntry.stuckPoints.join("; "))}`,
+					width,
+				),
+			);
+		}
+
+		// Wishlist from latest
+		if (latestEntry.wishlist && latestEntry.wishlist.length > 0) {
+			for (const wish of latestEntry.wishlist) {
+				lines.push(
+					truncateToWidth(
+						`    ${theme.fg("warning", "•")} ${theme.fg("muted", wish)}`,
+						width,
+					),
+				);
+			}
+		}
+
+		lines.push(""); // blank line between tasks
+	}
 
 	return new Text(lines.join("\n"), 0, 0);
 }

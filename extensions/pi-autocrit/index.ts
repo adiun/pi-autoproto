@@ -28,7 +28,7 @@ import {
 	type AutocritRuntime,
 } from "./state.js";
 import { formatScoreLine, formatDuration, getElapsedMs } from "./utils.js";
-import { renderCompactWidget, renderExpandedWidget } from "./widget.js";
+import { renderCompactWidget, renderExpandedWidget, renderFullscreenWidget, type IterationFeedbackData } from "./widget.js";
 import { registerInitTool } from "./tools/init.js";
 import { registerEvaluateTool } from "./tools/evaluate.js";
 import { registerLogTool } from "./tools/log.js";
@@ -36,7 +36,7 @@ import { registerReportTool } from "./tools/report.js";
 
 export default function autocritExtension(pi: ExtensionAPI): void {
 	let runtime: AutocritRuntime = createRuntime();
-	let dashboardExpanded = false;
+	let dashboardMode: "compact" | "expanded" | "fullscreen" = "compact";
 
 	const getRuntime = () => runtime;
 
@@ -77,7 +77,37 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 			return;
 		}
 
-		if (dashboardExpanded) {
+		if (dashboardMode === "fullscreen") {
+			// Read feedback data from evaluation results on disk
+			const feedbackData: IterationFeedbackData[] = [];
+			const resultsDir = state.resultsDir ?? "results";
+			const itersForFeedback = currentBranchIterations(state);
+			for (const iter of itersForFeedback) {
+				try {
+					const evalPath = path.join(ctx.cwd, resultsDir, `iter_${iter.iteration}`, "eval_results.json");
+					if (fs.existsSync(evalPath)) {
+						const raw = JSON.parse(fs.readFileSync(evalPath, "utf-8"));
+						feedbackData.push({
+							iteration: iter.iteration,
+							tasks: (raw.tasks || []).map((t: Record<string, unknown>) => ({
+								number: t.number as number,
+								name: t.name as string,
+								tier: t.tier as string,
+								completed: t.completed as boolean,
+								score: t.score as number,
+								persona_feedback: (t.persona_feedback as string) || "",
+								stuck_points: (t.stuck_points as string[]) || [],
+								wishlist: (t.wishlist as string[]) || [],
+								timed_out: t.timed_out as boolean | undefined,
+							})),
+						});
+					}
+				} catch { /* skip iterations without eval data */ }
+			}
+			ctx.ui.setWidget("autocrit", (_tui, theme) =>
+				renderFullscreenWidget(state, theme, feedbackData),
+			);
+		} else if (dashboardMode === "expanded") {
 			ctx.ui.setWidget("autocrit", (_tui, theme) =>
 				renderExpandedWidget(state, theme),
 			);
@@ -93,10 +123,12 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 	// -------------------------------------------------------------------
 
 	pi.registerShortcut("ctrl+x", {
-		description: "Toggle autocrit dashboard expand/collapse",
+		description: "Cycle autocrit dashboard: compact → expanded → feedback → compact",
 		handler: async (ctx) => {
 			if (!runtime.state.active) return;
-			dashboardExpanded = !dashboardExpanded;
+			const modes = ["compact", "expanded", "fullscreen"] as const;
+			const currentIdx = modes.indexOf(dashboardMode);
+			dashboardMode = modes[(currentIdx + 1) % modes.length];
 			updateWidget(ctx);
 		},
 	});

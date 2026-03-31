@@ -4,7 +4,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { renderCompactWidget, renderExpandedWidget } from "../extensions/pi-autocrit/widget.js";
+import { renderCompactWidget, renderExpandedWidget, renderFullscreenWidget, type IterationFeedbackData } from "../extensions/pi-autocrit/widget.js";
 import { createState, type AutocritState, type IterationResult } from "../extensions/pi-autocrit/state.js";
 import { createMockTheme } from "./mock-pi.js";
 
@@ -180,5 +180,137 @@ describe("renderExpandedWidget", () => {
 		const text = widget.text;
 		assert.ok(text.includes("Net change:"), `Expected 'Net change:' in: ${text}`);
 		assert.ok(text.includes("+30.0"), `Expected '+30.0' net change in: ${text}`);
+	});
+
+	it("shows ctrl+x detail hint", () => {
+		const state = makeState([{ composite: 50 }]);
+		const widget = renderExpandedWidget(state, theme as any);
+		const text = widget.text;
+		assert.ok(text.includes("ctrl+x detail"), `Expected 'ctrl+x detail' hint in: ${text}`);
+	});
+
+	it("delta column does not run into status column", () => {
+		const state = makeState([
+			{ iteration: 0, composite: 50, kept: true },
+			{ iteration: 1, composite: 54.4, kept: true },
+		]);
+		const widget = renderExpandedWidget(state, theme as any);
+		const text = widget.text;
+		// Delta "+4.4" and "kept" should NOT be adjacent (no "+4.4kept")
+		assert.ok(!text.includes("+4.4kept"), `Delta and status should be in separate columns: ${text}`);
+		// Both should appear in the output
+		assert.ok(text.includes("+4.4"), `Expected delta '+4.4' in: ${text}`);
+		assert.ok(text.includes("kept"), `Expected 'kept' status in: ${text}`);
+	});
+
+	it("negative delta column does not run into status column", () => {
+		const state = makeState([
+			{ iteration: 0, composite: 80, kept: true },
+			{ iteration: 1, composite: 72.3, kept: false },
+		]);
+		const widget = renderExpandedWidget(state, theme as any);
+		const text = widget.text;
+		assert.ok(!text.includes("-7.7discarded"), `Delta and status should be in separate columns: ${text}`);
+		assert.ok(text.includes("-7.7"), `Expected delta '-7.7' in: ${text}`);
+		assert.ok(text.includes("discarded"), `Expected 'discarded' status in: ${text}`);
+	});
+});
+
+describe("renderFullscreenWidget", () => {
+	it("includes expanded content plus feedback section", () => {
+		const state = makeState([{ iteration: 0, composite: 50, kept: true }]);
+		const feedbackData: IterationFeedbackData[] = [{
+			iteration: 0,
+			tasks: [{
+				number: 1,
+				name: "Calculate tip",
+				tier: "P0",
+				completed: true,
+				score: 85,
+				persona_feedback: "The tip calculator was easy to use.",
+				stuck_points: [],
+				wishlist: ["Split bill feature"],
+			}],
+		}];
+		const widget = renderFullscreenWidget(state, theme as any, feedbackData);
+		const text = widget.text;
+		// Should have expanded content
+		assert.ok(text.includes("composite"), `Expected 'composite' header in: ${text}`);
+		// Should have feedback section
+		assert.ok(text.includes("Persona Feedback"), `Expected 'Persona Feedback' section in: ${text}`);
+		assert.ok(text.includes("Calculate tip"), `Expected task name in: ${text}`);
+		assert.ok(text.includes("The tip calculator was easy to use."), `Expected feedback text in: ${text}`);
+		assert.ok(text.includes("Split bill feature"), `Expected wishlist item in: ${text}`);
+	});
+
+	it("shows ctrl+x collapse hint", () => {
+		const state = makeState([{ composite: 50 }]);
+		const widget = renderFullscreenWidget(state, theme as any, []);
+		const text = widget.text;
+		assert.ok(text.includes("ctrl+x collapse"), `Expected 'ctrl+x collapse' hint in: ${text}`);
+	});
+
+	it("shows placeholder when no feedback data", () => {
+		const state = makeState([{ composite: 50 }]);
+		const widget = renderFullscreenWidget(state, theme as any, []);
+		const text = widget.text;
+		assert.ok(text.includes("No evaluation feedback available"), `Expected placeholder in: ${text}`);
+	});
+
+	it("shows stuck points and wishlist", () => {
+		const state = makeState([{ iteration: 0, composite: 30, kept: true }]);
+		const feedbackData: IterationFeedbackData[] = [{
+			iteration: 0,
+			tasks: [{
+				number: 1,
+				name: "Find budget",
+				tier: "P0",
+				completed: false,
+				score: 20,
+				persona_feedback: "Couldn't find the budget section.",
+				stuck_points: ["Clicked settings instead of dashboard"],
+				wishlist: ["Clear navigation labels", "Budget shortcut on home"],
+			}],
+		}];
+		const widget = renderFullscreenWidget(state, theme as any, feedbackData);
+		const text = widget.text;
+		assert.ok(text.includes("Stuck:"), `Expected 'Stuck:' label in: ${text}`);
+		assert.ok(text.includes("Clicked settings instead of dashboard"), `Expected stuck point in: ${text}`);
+		assert.ok(text.includes("Clear navigation labels"), `Expected wishlist item in: ${text}`);
+		assert.ok(text.includes("Budget shortcut on home"), `Expected second wishlist item in: ${text}`);
+	});
+
+	it("shows feedback evolution across multiple iterations", () => {
+		const state = makeState([
+			{ iteration: 0, composite: 30, kept: true },
+			{ iteration: 1, composite: 60, kept: true },
+		]);
+		const feedbackData: IterationFeedbackData[] = [
+			{
+				iteration: 0,
+				tasks: [{
+					number: 1, name: "Calculate tip", tier: "P0",
+					completed: false, score: 20,
+					persona_feedback: "Could not find the calculator.",
+					stuck_points: [], wishlist: [],
+				}],
+			},
+			{
+				iteration: 1,
+				tasks: [{
+					number: 1, name: "Calculate tip", tier: "P0",
+					completed: true, score: 85,
+					persona_feedback: "Calculator works great now.",
+					stuck_points: [], wishlist: [],
+				}],
+			},
+		];
+		const widget = renderFullscreenWidget(state, theme as any, feedbackData);
+		const text = widget.text;
+		// Both iterations' feedback should appear
+		assert.ok(text.includes("Could not find the calculator."), `Expected iter 0 feedback in: ${text}`);
+		assert.ok(text.includes("Calculator works great now."), `Expected iter 1 feedback in: ${text}`);
+		// Latest status should be PASS
+		assert.ok(text.includes("PASS"), `Expected PASS status in: ${text}`);
 	});
 });
