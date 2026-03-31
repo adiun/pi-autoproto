@@ -16,7 +16,7 @@ import time
 import urllib.request
 
 from browser_backend import BrowserBackend, create_backend
-from persona_parser import Persona, PersonaTask, PersonaVariant, TaskResult, compute_composite, parse
+from persona_parser import Persona, PersonaTask, PersonaVariant, TaskResult, compute_composite, parse, parse_background
 
 DEFAULT_MAX_STEPS = 15
 
@@ -602,9 +602,11 @@ def _generate_persona_feedback(
     history: list[str],
     completed: bool,
 ) -> tuple[str, list[str]]:
-    """Ask the persona to reflect on their experience and express wishes.
+    """Ask the persona to reflect on their experience for this specific task.
 
-    Returns (feedback_text, wishlist) in a single LLM call.
+    Returns (feedback_text, []).  Wishlist is no longer per-task — it's
+    generated once at session level by _generate_session_wishlist().
+    The empty list preserves the function signature for backward compat.
     """
     history_text = "\n".join(history) if history else "(no actions taken)"
     outcome = "completed the task" if completed else "gave up"
@@ -615,21 +617,15 @@ def _generate_persona_feedback(
             f"Here's what happened:\n{history_text}\n\n"
             f"You {outcome}.\n\n"
             "Reply with a JSON object containing:\n"
-            '1. "feedback": 2-4 sentences AS the persona. Explain your experience based on '
+            '"feedback": 2-4 sentences AS the persona. Explain your experience based on '
             "your daily life, job, and needs. What was good? What was frustrating? "
-            "What would you tell the developer? Be specific. First person.\n"
-            '2. "wishlist": 1-3 short "it would be nice if..." wishes from the persona\'s '
-            "perspective. Things that would make this app fit better into your life. "
-            "Be concrete and grounded in your daily routine, not generic feature requests.\n\n"
-            'Example: {"feedback": "I liked that...", "wishlist": ["It would be nice if I could see my total before splitting the bill"]}'
+            "What would you tell the developer? Be specific. First person.\n\n"
+            'Example: {"feedback": "I liked that the split was fast, but I had no idea how to handle an uneven split. After an 8-hour shift I don\'t want to do extra math."}'
         )
         feedback = result.get("feedback", "")
-        wishlist = result.get("wishlist", [])
-        if isinstance(wishlist, str):
-            wishlist = [wishlist]
-        return feedback, wishlist
+        return feedback, []
     except Exception:
-        # Fall back: try plain-text feedback, empty wishlist
+        # Fall back: try plain-text feedback
         try:
             feedback = llm(
                 f"You are {persona.name}, {persona.background}\n\n"
@@ -644,6 +640,127 @@ def _generate_persona_feedback(
             return feedback, []
         except Exception:
             return "", []
+
+
+# ---------------------------------------------------------------------------
+# Exploratory task generation
+# ---------------------------------------------------------------------------
+
+def _generate_exploratory_tasks(
+    persona: Persona,
+    core_tasks: list[PersonaTask],
+    app_snapshot: str,
+) -> list[PersonaTask]:
+    """Generate 2-3 ad-hoc tasks based on what the persona sees right now.
+
+    Called at evaluation time (not setup). Tasks get tier="EX" and numbers 101+.
+    """
+    core_summary = "\n".join(
+        f"- {t.name}: {t.goal[:100]}" for t in core_tasks
+    )
+
+    # Truncate snapshot to avoid blowing up prompt size
+    if len(app_snapshot) > 15_000:
+        app_snapshot = app_snapshot[:15_000] + "\n[...truncated]"
+
+    prompt = f"""You are {persona.name}, {persona.role}.
+
+{persona.background}
+
+{persona.agent_instructions}
+
+You're testing a web app. Here's what's on screen right now:
+{app_snapshot}
+
+You already have your usual tasks:
+{core_summary}
+
+Now \u2014 what else catches your eye? What would you poke at? What are you
+curious about or suspicious of? Generate 2-3 things you'd try that
+aren't covered by your usual tasks.
+
+Requirements:
+- Each task must be something you can do by clicking, typing, or scrolling
+- Each task should test something different from your usual tasks
+- At least one should be something slightly unexpected or adversarial
+  ("what happens if I...", "can I break this by...")
+
+Reply with a JSON object:
+{{
+  "tasks": [
+    {{
+      "name": "short name",
+      "type": "navigation",
+      "goal": "what you want to try, in your voice",
+      "success_criteria": ["what would make this a good experience"],
+      "evaluation_method": "output_review"
+    }}
+  ]
+}}"""
+
+    result = llm_json(prompt)
+    tasks = []
+    for i, t in enumerate(result.get("tasks", [])[:3]):
+        tasks.append(PersonaTask(
+            number=101 + i,
+            name=t.get("name", f"Exploratory {i+1}"),
+            tier="EX",
+            type=t.get("type", "navigation"),
+            goal=t.get("goal", ""),
+            success_criteria=t.get("success_criteria", []),
+            evaluation_method="output_review",
+        ))
+    return tasks
+
+
+# ---------------------------------------------------------------------------
+# Session wishlist
+# ---------------------------------------------------------------------------
+
+def _generate_session_wishlist(
+    persona: Persona,
+    task_results: list[TaskResult],
+) -> dict:
+    """Generate a cumulative wishlist after all tasks complete.
+
+    Returns dict with keys: wishlist (list[str]), surprise (str), would_use (str).
+    Fed both core and exploratory task results for full context.
+    """
+    task_summaries = []
+    for r in task_results:
+        status = "completed" if r.completed else "gave up"
+        label = f"[{r.task.tier}]" if r.task.tier != "EX" else "[exploratory]"
+        summary = f"Task {label}: {r.task.goal}\nOutcome: {status} (score: {r.score})"
+        if r.persona_feedback:
+            summary += f"\nYour reaction: {r.persona_feedback}"
+        if r.stuck_points:
+            summary += f"\nStuck on: {'; '.join(r.stuck_points)}"
+        task_summaries.append(summary)
+
+    all_summaries = "\n\n".join(task_summaries)
+
+    prompt = f"""You are {persona.name}, {persona.role}.
+
+{persona.background}
+
+{persona.agent_instructions}
+
+You just finished testing a new app across {len(task_results)} tasks. Here's what happened:
+
+{all_summaries}
+
+Now reflect on the whole experience. Answer as yourself \u2014 grounded in your daily life, your job, your routines, your frustrations.
+
+Reply with a JSON object:
+{{
+  "wishlist": [
+    "3-5 specific things that would make this app fit into your actual routine. Each wish must reference either (a) a specific moment from your day/week when you'd use this, or (b) a specific frustration you hit during testing. No generic feature requests."
+  ],
+  "surprise": "1-2 sentences about what surprised you (good or bad) \u2014 something you didn't expect from the app",
+  "would_use": "Honest 1-2 sentence answer: would you use this instead of what you do now? Why or why not?"
+}}"""
+
+    return llm_json(prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -915,6 +1032,8 @@ def _print_results(
     scores: dict,
     quiet: bool,
     calibration: dict | None = None,
+    exploratory_results: list[TaskResult] | None = None,
+    session_wishlist: dict | None = None,
 ) -> None:
     """Print the evaluation results block."""
     print("\n--- EVALUATION RESULTS ---")
@@ -932,9 +1051,27 @@ def _print_results(
         print(f'Task {r.task.number} [{r.task.tier}] "{r.task.name}": {status} ({detail})')
         if r.persona_feedback:
             print(f'  Feedback: {r.persona_feedback}')
-        if r.wishlist:
-            for wish in r.wishlist:
-                print(f'  Wish: {wish}')
+
+    if exploratory_results:
+        print()
+        ex_scores = [r.score for r in exploratory_results]
+        ex_avg = sum(ex_scores) / len(ex_scores) if ex_scores else 0
+        print(f"EXPLORATORY TASKS (score: {round(ex_avg, 1)}, not in composite):")
+        for r in exploratory_results:
+            status = "PASS" if r.completed else "FAIL"
+            print(f'  EX Task {r.task.number} "{r.task.name}": {status} (score={r.score})')
+            if r.persona_feedback:
+                print(f'    Feedback: {r.persona_feedback}')
+
+    if session_wishlist:
+        print()
+        print("SESSION WISHLIST:")
+        for wish in session_wishlist.get("wishlist", []):
+            print(f"  \u2022 {wish}")
+        if session_wishlist.get("surprise"):
+            print(f"  Surprise: {session_wishlist['surprise']}")
+        if session_wishlist.get("would_use"):
+            print(f"  Would use: {session_wishlist['would_use']}")
 
     if calibration:
         print()
@@ -955,6 +1092,8 @@ def _write_json(
     scores: dict,
     calibration: dict | None = None,
     output_dir: str = ".",
+    exploratory_results: list[TaskResult] | None = None,
+    session_wishlist: dict | None = None,
 ) -> None:
     """Write detailed results to eval_results.json."""
     output = {
@@ -980,6 +1119,32 @@ def _write_json(
         })
     if calibration:
         output["calibration"] = calibration
+
+    # Exploratory tasks (scored independently, not in composite)
+    if exploratory_results:
+        output["exploratory_tasks"] = []
+        ex_scores = []
+        for r in exploratory_results:
+            output["exploratory_tasks"].append({
+                "number": r.task.number,
+                "name": r.task.name,
+                "tier": r.task.tier,
+                "completed": r.completed,
+                "score": r.score,
+                "steps": r.steps,
+                "stuck_points": r.stuck_points,
+                "found_answer": r.found_answer,
+                "notes": r.notes,
+                "persona_feedback": r.persona_feedback,
+                "wishlist": r.wishlist,
+            })
+            ex_scores.append(r.score)
+        if ex_scores:
+            output["exploratory_score"] = round(sum(ex_scores) / len(ex_scores), 1)
+
+    # Session-level wishlist (cumulative, grounded in persona experience)
+    if session_wishlist:
+        output["session_wishlist"] = session_wishlist
 
     with open(os.path.join(output_dir, "eval_results.json"), "w") as f:
         json.dump(output, f, indent=2)
@@ -1036,6 +1201,10 @@ def main() -> None:
     parser.add_argument("--browser-backend", type=str, default=None,
         help="Browser backend: 'agent-browser' (default) or 'playwright-cli'. "
              "Falls back to AUTOCRIT_BROWSER_BACKEND env var.")
+    parser.add_argument("--post-eval", action="store_true",
+        help="Run exploratory tasks and session wishlist after core tasks. "
+             "Reads core results from eval_results.json in --output-dir. "
+             "Used by evaluate.ts after per-task execution.")
     args = parser.parse_args()
 
     # --quick sets constituent flags
@@ -1341,9 +1510,230 @@ def main() -> None:
             with open(os.path.join(args.output_dir, "eval_results.json"), "w") as f:
                 json.dump(output, f, indent=2)
 
+        elif args.post_eval:
+            # --- Post-eval: exploratory tasks + session wishlist ---
+            # Called by evaluate.ts after per-task core execution.
+            # Reads core results from existing eval_results.json.
+            existing_path = os.path.join(args.output_dir, "eval_results.json")
+            if not os.path.exists(existing_path):
+                print(f"Error: {existing_path} not found. Run core evaluation first.", file=sys.stderr)
+                sys.exit(1)
+
+            with open(existing_path) as f:
+                existing = json.load(f)
+
+            # Reconstruct core TaskResults for session wishlist context
+            core_task_results: list[TaskResult] = []
+            task_map = {t.number: t for t in persona.tasks}
+            for td in existing.get("tasks", []):
+                task_obj = task_map.get(td["number"])
+                if not task_obj:
+                    # Task not in persona.md (shouldn't happen, but be safe)
+                    task_obj = PersonaTask(
+                        number=td["number"], name=td.get("name", ""),
+                        tier=td.get("tier", "P0"), type="navigation",
+                        goal="", success_criteria=[],
+                        evaluation_method="output_review",
+                    )
+                core_task_results.append(TaskResult(
+                    task=task_obj,
+                    completed=td.get("completed", False),
+                    score=td.get("score", 0),
+                    steps=td.get("steps", 0),
+                    stuck_points=td.get("stuck_points", []),
+                    found_answer=td.get("found_answer"),
+                    notes=td.get("notes", ""),
+                    persona_feedback=td.get("persona_feedback", ""),
+                    wishlist=td.get("wishlist", []),
+                ))
+
+            # Capture landing page for exploratory task generation
+            _browser.open(f"http://localhost:{port}")
+            _wait_after_action(wait_ms=500)
+            if args.vision:
+                _, legend = _capture_annotated_screenshot(0)
+                app_snapshot = legend
+            else:
+                app_snapshot = _browser.snapshot()
+
+            # Generate exploratory tasks
+            exploratory_results: list[TaskResult] = []
+            try:
+                exploratory_tasks = _generate_exploratory_tasks(persona, tasks, app_snapshot)
+                if not args.quiet:
+                    print(f"Generated {len(exploratory_tasks)} exploratory tasks")
+                    for et in exploratory_tasks:
+                        print(f"  EX Task {et.number}: {et.name}")
+                    print()
+
+                for etask in exploratory_tasks:
+                    if not args.quiet:
+                        if args.verbose:
+                            print(f"Evaluating EX Task {etask.number}: {etask.name}...")
+                        else:
+                            print(f"Evaluating EX Task {etask.number}: {etask.name}...", end="", flush=True)
+                    try:
+                        result = evaluate_task(
+                            etask, persona, port, args.verbose,
+                            snapshot_flags=args.snapshot_flags,
+                            wait_after_action=not args.no_wait,
+                            wait_ms=args.wait_ms,
+                            max_snapshot_chars=args.max_snapshot,
+                            screenshot_dir=None,
+                            vision=args.vision,
+                            max_steps=args.max_steps,
+                            skip_feedback=False,
+                        )
+                    except Exception as e:
+                        if args.verbose:
+                            print(f"  Error: {e}")
+                        result = TaskResult(
+                            task=etask, completed=False, score=0.0,
+                            steps=0, stuck_points=[str(e)],
+                            found_answer=None, notes=f"Error: {e}",
+                        )
+                    if not args.quiet and not args.verbose:
+                        status = " PASS" if result.completed else " FAIL"
+                        print(status)
+                    exploratory_results.append(result)
+            except Exception as e:
+                if not args.quiet:
+                    print(f"Exploratory task generation failed: {e}")
+
+            # Generate session wishlist
+            session_wishlist: dict = {}
+            try:
+                all_results = core_task_results + exploratory_results
+                session_wishlist = _generate_session_wishlist(persona, all_results)
+                if not args.quiet:
+                    print(f"\nSession wishlist ({len(session_wishlist.get('wishlist', []))} items)")
+            except Exception as e:
+                if not args.quiet:
+                    print(f"Session wishlist generation failed: {e}")
+
+            # Close browser
+            _browser.close()
+
+            # Merge into existing eval_results.json
+            if exploratory_results:
+                existing["exploratory_tasks"] = []
+                ex_scores = []
+                for r in exploratory_results:
+                    existing["exploratory_tasks"].append({
+                        "number": r.task.number,
+                        "name": r.task.name,
+                        "tier": r.task.tier,
+                        "completed": r.completed,
+                        "score": r.score,
+                        "steps": r.steps,
+                        "stuck_points": r.stuck_points,
+                        "found_answer": r.found_answer,
+                        "notes": r.notes,
+                        "persona_feedback": r.persona_feedback,
+                        "wishlist": r.wishlist,
+                    })
+                    ex_scores.append(r.score)
+                if ex_scores:
+                    existing["exploratory_score"] = round(sum(ex_scores) / len(ex_scores), 1)
+
+            if session_wishlist:
+                existing["session_wishlist"] = session_wishlist
+
+            with open(existing_path, "w") as f:
+                json.dump(existing, f, indent=2)
+
+            # Print summary
+            if not args.quiet:
+                print("\n--- POST-EVAL RESULTS ---")
+                if exploratory_results:
+                    print(f"Exploratory score: {existing.get('exploratory_score', 'N/A')}")
+                    for r in exploratory_results:
+                        status = "PASS" if r.completed else "FAIL"
+                        print(f'  EX Task {r.task.number} "{r.task.name}": {status} (score={r.score})')
+                        if r.persona_feedback:
+                            print(f"    Feedback: {r.persona_feedback}")
+                if session_wishlist:
+                    print("\nSession wishlist:")
+                    for wish in session_wishlist.get("wishlist", []):
+                        print(f"  \u2022 {wish}")
+                    if session_wishlist.get("would_use"):
+                        print(f"\nWould use: {session_wishlist['would_use']}")
+                print("--- END POST-EVAL ---")
+
         else:
             # --- Standard single-persona evaluation ---
+
+            # Generate exploratory tasks before core eval (capture landing page)
+            exploratory_tasks_list: list[PersonaTask] = []
+            if not args.skip_feedback and not args.task:
+                try:
+                    _browser.open(f"http://localhost:{port}")
+                    _wait_after_action(wait_ms=500)
+                    if args.vision:
+                        _, legend = _capture_annotated_screenshot(0)
+                        app_snapshot = legend
+                    else:
+                        app_snapshot = _browser.snapshot()
+                    exploratory_tasks_list = _generate_exploratory_tasks(persona, tasks, app_snapshot)
+                    if not args.quiet:
+                        print(f"Generated {len(exploratory_tasks_list)} exploratory tasks")
+                        for et in exploratory_tasks_list:
+                            print(f"  EX Task {et.number}: {et.name}")
+                        print()
+                except Exception as e:
+                    if not args.quiet:
+                        print(f"Exploratory task generation failed: {e}")
+
+            # Run core tasks
             final_results, scores, calibration = _run_evaluation(persona)
+
+            # Run exploratory tasks
+            exploratory_results: list[TaskResult] = []
+            if exploratory_tasks_list:
+                if not args.quiet:
+                    print(f"\n--- Exploratory Tasks ---")
+                for etask in exploratory_tasks_list:
+                    if not args.quiet:
+                        if args.verbose:
+                            print(f"Evaluating EX Task {etask.number}: {etask.name}...")
+                        else:
+                            print(f"Evaluating EX Task {etask.number}: {etask.name}...", end="", flush=True)
+                    try:
+                        result = evaluate_task(
+                            etask, persona, port, args.verbose,
+                            snapshot_flags=args.snapshot_flags,
+                            wait_after_action=not args.no_wait,
+                            wait_ms=args.wait_ms,
+                            max_snapshot_chars=args.max_snapshot,
+                            screenshot_dir=None,
+                            vision=args.vision,
+                            max_steps=args.max_steps,
+                            skip_feedback=False,
+                        )
+                    except Exception as e:
+                        if args.verbose:
+                            print(f"  Error: {e}")
+                        result = TaskResult(
+                            task=etask, completed=False, score=0.0,
+                            steps=0, stuck_points=[str(e)],
+                            found_answer=None, notes=f"Error: {e}",
+                        )
+                    if not args.quiet and not args.verbose:
+                        status = " PASS" if result.completed else " FAIL"
+                        print(status)
+                    exploratory_results.append(result)
+
+            # Generate session wishlist
+            session_wishlist: dict = {}
+            if not args.skip_feedback:
+                try:
+                    all_results = final_results + exploratory_results
+                    session_wishlist = _generate_session_wishlist(persona, all_results)
+                    if not args.quiet:
+                        print(f"\nSession wishlist ({len(session_wishlist.get('wishlist', []))} items)")
+                except Exception as e:
+                    if not args.quiet:
+                        print(f"Session wishlist generation failed: {e}")
 
             # Close browser
             _browser.close()
@@ -1353,8 +1743,12 @@ def main() -> None:
                     json.dump(calibration, f, indent=2)
 
             # Output
-            _print_results(final_results, scores, args.quiet, calibration)
-            _write_json(final_results, scores, calibration, output_dir=args.output_dir)
+            _print_results(final_results, scores, args.quiet, calibration,
+                           exploratory_results=exploratory_results,
+                           session_wishlist=session_wishlist)
+            _write_json(final_results, scores, calibration, output_dir=args.output_dir,
+                        exploratory_results=exploratory_results,
+                        session_wishlist=session_wishlist)
 
     finally:
         if not external_server:

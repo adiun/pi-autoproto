@@ -292,6 +292,60 @@ def parse(path: str = "persona.md", requirements_path: str | None = None) -> Per
     )
 
 
+def parse_background(path: str = "persona.md") -> dict:
+    """Parse only the identity sections of persona.md (no tasks required).
+
+    Returns a dict with keys: name, role, background, device, context,
+    time_pressure, tech_savviness, agent_instructions.
+
+    Use this during setup when persona.md has background + environment +
+    agent_instructions but no Requirements section yet.
+    """
+    with open(path) as f:
+        text = f.read()
+
+    sections = _split_sections(text)
+
+    # Find persona header
+    header_line = None
+    for line in text.split("\n"):
+        if line.startswith("# Persona:"):
+            header_line = line
+            break
+
+    if not header_line:
+        raise ValueError("Missing '# Persona:' header")
+    header_text = header_line.split("# Persona:")[1].strip()
+    parts = [p.strip() for p in header_text.split(",", 1)]
+    persona_name = parts[0]
+    persona_role = parts[1] if len(parts) > 1 else ""
+
+    # Background
+    background = sections.get("Background", "").strip()
+    if not background:
+        raise ValueError("Missing or empty ## Background section")
+
+    # Environment
+    env_text = sections.get("Environment", "")
+    env = {}
+    for m in re.finditer(r"-\s*(\w[\w\s]*?):\s*(.+)", env_text):
+        env[m.group(1).strip().lower().replace(" ", "_")] = m.group(2).strip()
+
+    # Agent Instructions
+    agent_instructions = sections.get("Agent Instructions", "").strip()
+
+    return {
+        "name": persona_name,
+        "role": persona_role,
+        "background": background,
+        "device": env.get("device", "desktop"),
+        "context": env.get("context", ""),
+        "time_pressure": env.get("time_pressure", "medium"),
+        "tech_savviness": env.get("tech_savviness", "medium"),
+        "agent_instructions": agent_instructions,
+    }
+
+
 @dataclass
 class Hypothesis:
     """A testable hypothesis defined in hypotheses.md."""

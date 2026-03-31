@@ -30,6 +30,8 @@ Dashboard: `ctrl+x` to expand/collapse. `/autocrit` for status.
 - **Bundle independent fixes.** If multiple failing tasks have independent fixes (e.g., add a nav item AND move a button), address them in one iteration. The keep/discard protocol handles failure — revert the whole bundle.
 - **Timeouts are not failures.** If a task times out with no feedback, it's an infrastructure issue (LLM latency, agent-browser). Do not re-run. Log the iteration and move on.
 - **Faster iteration with cheaper models.** For faster evaluation cycles, consider using a cheaper/faster model for the persona agent (e.g., `--cmd "claude -p --model haiku"`). The persona agent navigates and clicks — it doesn't need the most capable model.
+- **Core vs. exploratory tasks.** Core tasks (in persona.md) are fixed and drive the keep/discard composite score. Exploratory tasks are generated fresh each full-mode evaluation and scored separately. Don't optimize for exploratory scores — they change every iteration. But read exploratory feedback for UX issues you didn't know about.
+- **Session wishlist is cumulative.** After all tasks (core + exploratory), the persona reflects on the whole experience. Read `session_wishlist` in eval_results.json for grounded wishes. Diagnose root causes, don't implement literally.
 
 ## Quick Start
 
@@ -52,13 +54,34 @@ If `persona.md` does NOT exist:
    - The core function of the app
    - Device and context (phone on the go? desktop at work?)
    - What would make the target user love this app
-4. Generate `persona.md` following the example format:
-   - 4-8 tasks across P0/P1/P2 tiers
-   - Include anti-tasks (things the persona would NOT do)
-   - Write agent_instructions that capture the persona's personality and patience level
-   - **Background must be 4-6 paragraphs** including: day-to-day activities, current workarounds, pain points (3-5 specific frustrations), and why this app matters to them
-   - **Task design matters for UX quality.** Follow the task design principles below.
-5. Show it to the user for review.
+4. Generate `persona.md` with **only these sections** (no tasks yet):
+   - `# Persona: Name, Role`
+   - `## Background` (4-6 paragraphs) — day-to-day activities, current workarounds, pain points (3-5 specific frustrations), why this app matters
+   - `## Environment` — device, context, time pressure, tech savviness
+   - `## Agent Instructions` — personality, patience level, behavior
+   - **Do NOT write tasks** — the persona agent generates those in the next step.
+5. Show the background to the user for review.
+
+### 1b. Generate Tasks
+
+After the persona background is approved, the persona agent (not you) generates the tasks. This creates a healthy adversarial dynamic: you build the prototype, the persona defines success.
+
+1. Run task generation:
+   ```
+   uv run python/generate_tasks.py --cmd "<persona_cmd>" --app "<app description>" --write
+   ```
+   This appends Requirements + Scoring sections to `persona.md`.
+2. Review the generated tasks. Check for:
+   - At least 1 P0 and 1 P1 task at complexity Level 4-5 (synthesis/decision)
+   - Tasks grounded in the persona's specific life details (names, amounts, situations)
+   - Success criteria that require judgment, not just navigation
+   - Anti-tasks that match the persona's patience/context
+3. Show tasks to user for approval.
+4. If tasks are weak (too many "find X" / "see Y" tasks), regenerate.
+
+These are the **core tasks** — fixed for the entire experiment. Scores are comparable across iterations because core tasks never change.
+
+**Exploratory tasks** are generated automatically each evaluation run (in full mode) by the persona agent looking at the current app. They surface UX issues that core tasks don't cover. See Evaluation Discipline below.
 
 #### Task Design Principles
 
@@ -156,7 +179,10 @@ For each prototype branch:
 
 Repeat until a stopping condition:
 
-1. **Read results.** Read the eval_results.json from the last `run_evaluation`. Identify the lowest-scoring P0 task. Note `stuck_points`, `persona_feedback`, and `wishlist`.
+1. **Read results.** Read the eval_results.json from the last `run_evaluation`.
+   - **Core tasks:** Identify lowest-scoring P0 task. Note `stuck_points` and `persona_feedback`. The composite score from core tasks drives keep/discard.
+   - **Exploratory tasks:** Read for UX issues you didn't know about. Don't optimize for exploratory scores — they change every iteration. But if the persona found a dead-end or broken flow, that's real signal.
+   - **Session wishlist:** Cumulative reflections grounded in the persona's experience. Diagnose root causes, don't implement literally.
 
 2. **Fresh start thinking.** Before planning, ask yourself:
    - "If I were building this from scratch, knowing what the persona struggles with... would I build anything like what exists?"
@@ -166,7 +192,8 @@ Repeat until a stopping condition:
 3. **Plan a change.** Based on eval results and feedback:
    - Fix failing P0 tasks first, then P1, then P2
    - Consider different UI patterns, not just incremental tweaks
-   - Analyze wishlist items: what's the underlying need?
+   - Analyze `session_wishlist`: what's the underlying need behind each wish?
+   - If exploratory tasks surfaced a problem, factor it in even though it's not scored
 
 4. **Write plan.** Create `results/iter_N/plan.md` (where N is the upcoming iteration number) with:
    - **Score summary:** Per-task scores from the previous iteration — task number, tier, score, pass/fail
@@ -230,7 +257,7 @@ Present to the user: comparative report, recommendations, bias flags.
 - **Score variance is real.** Single-run scores can swing 30+ points on the same code. Don't trust deltas under 15 points from a single quick run. If a task shows a surprising score change, re-run it before making a keep/discard decision.
 - **Timeouts ≠ failures.** If a task times out but passed in a previous iteration with unchanged code, it's an infrastructure issue (LLM latency, browser backend). Do not re-run evaluations because of timeouts. Log the iteration and move on.
 - **log_iteration auto-reads scores.** You don't need to manually compute composite/P0/P1/P2 — just pass iteration number, description, and kept. Scores are read from eval_results.json.
-- **Wishlist items are desires, not requirements.** Diagnose root causes.
+- **Wishlist items are desires, not requirements.** The `session_wishlist` is grounded in the persona's experience, but still: diagnose root causes, don't implement literally.
 - **approach.md is read-only during iteration.** Don't pivot mid-prototype.
 - **All feedback is hypothesis-grade.** Treat as hypotheses for real users, not conclusions.
 - **Take creative risks.** The keep/discard protocol exists to enable risk-taking.

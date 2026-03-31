@@ -36,12 +36,21 @@ export interface TaskResultJson {
 	timed_out?: boolean;
 }
 
+export interface SessionWishlist {
+	wishlist: string[];
+	surprise: string;
+	would_use: string;
+}
+
 export interface EvalResultsJson {
 	composite_score: number;
 	p0_score: number;
 	p1_score: number;
 	p2_score: number;
 	tasks: TaskResultJson[];
+	exploratory_tasks?: TaskResultJson[];
+	exploratory_score?: number;
+	session_wishlist?: SessionWishlist;
 	[key: string]: unknown;
 }
 

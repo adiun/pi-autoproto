@@ -616,6 +616,175 @@ class TestGenerateVariants:
 # 8. _write_json() tests
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# 7b. Exploratory task generation tests
+# ---------------------------------------------------------------------------
+
+class TestGenerateExploratoryTasks:
+    """Tests for _generate_exploratory_tasks with mocked LLM."""
+
+    @patch("evaluate.llm_json")
+    def test_generates_ex_tasks(self, mock_llm_json, sample_persona):
+        from evaluate import _generate_exploratory_tasks
+        mock_llm_json.return_value = {
+            "tasks": [
+                {
+                    "name": "Try huge bill",
+                    "type": "navigation",
+                    "goal": "Enter $10,000 and see what happens",
+                    "success_criteria": ["No overflow"],
+                    "evaluation_method": "output_review",
+                },
+                {
+                    "name": "Empty submit",
+                    "type": "navigation",
+                    "goal": "Submit without entering anything",
+                    "success_criteria": ["Error shown"],
+                    "evaluation_method": "output_review",
+                },
+            ]
+        }
+        tasks = _generate_exploratory_tasks(
+            sample_persona, sample_persona.tasks, "<snapshot>")
+        assert len(tasks) == 2
+        assert tasks[0].number == 101
+        assert tasks[1].number == 102
+        assert tasks[0].tier == "EX"
+        assert tasks[1].tier == "EX"
+        assert tasks[0].name == "Try huge bill"
+        assert tasks[0].evaluation_method == "output_review"
+
+    @patch("evaluate.llm_json")
+    def test_caps_at_3_tasks(self, mock_llm_json, sample_persona):
+        from evaluate import _generate_exploratory_tasks
+        mock_llm_json.return_value = {
+            "tasks": [
+                {"name": f"Task {i}", "goal": f"Do thing {i}",
+                 "success_criteria": [], "evaluation_method": "output_review"}
+                for i in range(5)
+            ]
+        }
+        tasks = _generate_exploratory_tasks(
+            sample_persona, sample_persona.tasks, "<snapshot>")
+        assert len(tasks) == 3
+
+    @patch("evaluate.llm_json")
+    def test_empty_response(self, mock_llm_json, sample_persona):
+        from evaluate import _generate_exploratory_tasks
+        mock_llm_json.return_value = {"tasks": []}
+        tasks = _generate_exploratory_tasks(
+            sample_persona, sample_persona.tasks, "<snapshot>")
+        assert len(tasks) == 0
+
+    @patch("evaluate.llm_json")
+    def test_ex_tasks_excluded_from_composite(self, mock_llm_json, sample_persona):
+        """EX-tier tasks should not affect compute_composite."""
+        from evaluate import _generate_exploratory_tasks
+        mock_llm_json.return_value = {
+            "tasks": [{"name": "Explore", "goal": "Poke around",
+                       "success_criteria": [], "evaluation_method": "output_review"}]
+        }
+        ex_tasks = _generate_exploratory_tasks(
+            sample_persona, sample_persona.tasks, "<snapshot>")
+
+        # Create a result for the EX task
+        ex_result = TaskResult(
+            task=ex_tasks[0], completed=True, score=50.0,
+            steps=3, stuck_points=[], found_answer=None, notes="",
+        )
+        # compute_composite should ignore EX tier
+        from persona_parser import compute_composite
+        scores = compute_composite([ex_result], sample_persona)
+        # No P0/P1/P2 tasks -> all zeros
+        assert scores["composite"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# 7c. Session wishlist tests
+# ---------------------------------------------------------------------------
+
+class TestGenerateSessionWishlist:
+    """Tests for _generate_session_wishlist with mocked LLM."""
+
+    @patch("evaluate.llm_json")
+    def test_generates_wishlist(self, mock_llm_json, sample_persona, sample_task_results):
+        from evaluate import _generate_session_wishlist
+        mock_llm_json.return_value = {
+            "wishlist": [
+                "Save my usual 3-way split so I don't re-enter after every shift",
+                "Show per-person difference when changing tip %",
+            ],
+            "surprise": "Didn't expect the preset buttons — that was nice.",
+            "would_use": "Yes, faster than my calculator app for the usual post-shift split.",
+        }
+        result = _generate_session_wishlist(sample_persona, sample_task_results)
+        assert len(result["wishlist"]) == 2
+        assert "3-way split" in result["wishlist"][0]
+        assert "surprise" in result
+        assert "would_use" in result
+
+    @patch("evaluate.llm_json")
+    def test_includes_ex_task_context(self, mock_llm_json, sample_persona):
+        """Session wishlist receives both core and exploratory results."""
+        from evaluate import _generate_session_wishlist
+        from persona_parser import PersonaTask
+
+        core_result = TaskResult(
+            task=sample_persona.tasks[0], completed=True, score=90,
+            steps=3, stuck_points=[], found_answer="$34",
+            notes="", persona_feedback="Quick and easy.",
+        )
+        ex_task = PersonaTask(
+            number=101, name="Break it", tier="EX", type="navigation",
+            goal="Enter negative number", success_criteria=[],
+            evaluation_method="output_review",
+        )
+        ex_result = TaskResult(
+            task=ex_task, completed=False, score=20,
+            steps=5, stuck_points=["App showed NaN"],
+            found_answer=None, notes="Broken",
+            persona_feedback="Entering -50 broke everything.",
+        )
+
+        mock_llm_json.return_value = {
+            "wishlist": ["Handle negative numbers"],
+            "surprise": "Negative bill broke the app.",
+            "would_use": "Maybe, if they fix the edge cases.",
+        }
+
+        result = _generate_session_wishlist(sample_persona, [core_result, ex_result])
+        # Verify the prompt included both results
+        call_args = mock_llm_json.call_args[0][0]
+        assert "Quick and easy" in call_args
+        assert "Entering -50" in call_args or "negative" in call_args.lower()
+        assert "[exploratory]" in call_args
+
+
+# ---------------------------------------------------------------------------
+# 7d. Per-task feedback (simplified, no wishlist)
+# ---------------------------------------------------------------------------
+
+class TestSimplifiedPersonaFeedback:
+    """Verify _generate_persona_feedback no longer produces wishlist."""
+
+    @patch("evaluate.llm_json")
+    def test_returns_empty_wishlist(self, mock_llm_json, sample_persona):
+        from evaluate import _generate_persona_feedback
+        mock_llm_json.return_value = {
+            "feedback": "The split was fast but I couldn't do uneven amounts.",
+        }
+        feedback, wishlist = _generate_persona_feedback(
+            sample_persona, sample_persona.tasks[0],
+            ["clicked e1", "filled e2"], completed=True,
+        )
+        assert feedback == "The split was fast but I couldn't do uneven amounts."
+        assert wishlist == []
+
+
+# ---------------------------------------------------------------------------
+# 8. _write_json() tests
+# ---------------------------------------------------------------------------
+
 class TestWriteJson:
     """Tests for _write_json output."""
 
@@ -692,6 +861,77 @@ class TestWriteJson:
             with open(path) as f:
                 data = json.load(f)
             assert "calibration" not in data
+
+    def test_includes_exploratory_tasks(self, sample_task_results, sample_tasks):
+        from evaluate import _write_json
+        scores = {
+            "composite": 72.5,
+            "p0_score": 90.0,
+            "p1_score": 75.0,
+            "p2_score": 0.0,
+        }
+        ex_task = PersonaTask(
+            number=101, name="Explore edge", tier="EX",
+            type="navigation", goal="Try something weird",
+            success_criteria=[], evaluation_method="output_review",
+        )
+        ex_result = TaskResult(
+            task=ex_task, completed=True, score=65.0,
+            steps=4, stuck_points=[], found_answer=None,
+            notes="Interesting", persona_feedback="That was unexpected.",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _write_json(sample_task_results, scores, output_dir=tmpdir,
+                        exploratory_results=[ex_result])
+            path = os.path.join(tmpdir, "eval_results.json")
+            with open(path) as f:
+                data = json.load(f)
+            assert "exploratory_tasks" in data
+            assert len(data["exploratory_tasks"]) == 1
+            assert data["exploratory_tasks"][0]["tier"] == "EX"
+            assert data["exploratory_tasks"][0]["number"] == 101
+            assert data["exploratory_score"] == 65.0
+            # Core composite should NOT include exploratory
+            assert data["composite_score"] == 72.5
+
+    def test_includes_session_wishlist(self, sample_task_results):
+        from evaluate import _write_json
+        scores = {
+            "composite": 72.5,
+            "p0_score": 90.0,
+            "p1_score": 75.0,
+            "p2_score": 0.0,
+        }
+        wishlist = {
+            "wishlist": ["Save my usual split", "Show tip difference"],
+            "surprise": "Preset buttons were nice.",
+            "would_use": "Yes, faster than calculator.",
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _write_json(sample_task_results, scores, output_dir=tmpdir,
+                        session_wishlist=wishlist)
+            path = os.path.join(tmpdir, "eval_results.json")
+            with open(path) as f:
+                data = json.load(f)
+            assert "session_wishlist" in data
+            assert len(data["session_wishlist"]["wishlist"]) == 2
+            assert data["session_wishlist"]["would_use"] == "Yes, faster than calculator."
+
+    def test_no_exploratory_or_wishlist_when_none(self, sample_task_results):
+        from evaluate import _write_json
+        scores = {
+            "composite": 72.5,
+            "p0_score": 90.0,
+            "p1_score": 75.0,
+            "p2_score": 0.0,
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _write_json(sample_task_results, scores, output_dir=tmpdir)
+            path = os.path.join(tmpdir, "eval_results.json")
+            with open(path) as f:
+                data = json.load(f)
+            assert "exploratory_tasks" not in data
+            assert "session_wishlist" not in data
 
 
 # ---------------------------------------------------------------------------

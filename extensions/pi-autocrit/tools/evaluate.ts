@@ -422,6 +422,50 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		recomputeScores(combined);
 		fs.writeFileSync(runCtx.evalResultsPath, JSON.stringify(combined, null, 2));
 
+		// Run post-eval (exploratory tasks + session wishlist) in full mode
+		if (runCtx.mode === "full" && !params.task) {
+			runCtx.onUpdate?.({
+				content: [{
+					type: "text",
+					text: `Running exploratory tasks + session wishlist…`,
+				}],
+			});
+
+			const postEvalCommand = buildEvaluateCommand({
+				pythonDir: runCtx.pythonDir,
+				useUv: runCtx.useUv,
+				iteration: params.iteration as number,
+				mode: runCtx.mode,
+				outputDir: runCtx.iterDir,
+				screenshotDir: runCtx.screenshotDir,
+				personaCmd: state.personaCmd!,
+				port: devServer.port,
+				browserBackend: state.browserBackend,
+				postEval: true,
+			});
+
+			// Exploratory tasks: ~3 tasks × per-task timeout
+			const postEvalTimeout = computeTaskTimeoutMs(maxSteps, 1) * 4;
+
+			try {
+				await pi.exec("bash", ["-c", postEvalCommand], {
+					signal: runCtx.signal,
+					timeout: postEvalTimeout,
+				});
+
+				// Re-read results (now includes exploratory_tasks + session_wishlist)
+				const updated = readEvalResults(runCtx.evalResultsPath);
+				if (updated) {
+					combined.exploratory_tasks = updated.exploratory_tasks;
+					combined.exploratory_score = updated.exploratory_score;
+					combined.session_wishlist = updated.session_wishlist;
+					// Don't overwrite core scores — they're already correct
+				}
+			} catch {
+				// Post-eval is best-effort; don't fail the whole evaluation
+			}
+		}
+
 		// Build response
 		return buildResponse(combined, runCtx.evalResultsPath, timedOutCount);
 	}
@@ -534,6 +578,39 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			const stuckPoints = task.stuck_points;
 			if (stuckPoints && stuckPoints.length > 0) {
 				responseText += `  Stuck: ${stuckPoints.join("; ")}\n`;
+			}
+		}
+
+		// Exploratory tasks (not scored for keep/discard)
+		const exploratoryTasks = evalResults.exploratory_tasks;
+		if (exploratoryTasks && exploratoryTasks.length > 0) {
+			responseText += `\nExploratory tasks (not in composite):\n`;
+			for (const task of exploratoryTasks) {
+				const status = task.completed ? "PASS" : "FAIL";
+				responseText += `  EX Task ${task.number} "${task.name}": ${status} (score: ${task.score})\n`;
+				if (task.persona_feedback) {
+					responseText += `    Feedback: ${task.persona_feedback}\n`;
+				}
+			}
+			if (evalResults.exploratory_score != null) {
+				responseText += `  Exploratory score: ${evalResults.exploratory_score}\n`;
+			}
+		}
+
+		// Session wishlist
+		const wishlist = evalResults.session_wishlist;
+		if (wishlist) {
+			if (wishlist.wishlist?.length) {
+				responseText += `\nSession wishlist:\n`;
+				for (const wish of wishlist.wishlist) {
+					responseText += `  \u2022 ${wish}\n`;
+				}
+			}
+			if (wishlist.surprise) {
+				responseText += `  Surprise: ${wishlist.surprise}\n`;
+			}
+			if (wishlist.would_use) {
+				responseText += `  Would use: ${wishlist.would_use}\n`;
 			}
 		}
 

@@ -215,6 +215,7 @@ export function buildEvaluateCommand(params: {
 	personaCmd: string;
 	port?: number;
 	browserBackend?: string;
+	postEval?: boolean;
 }): string {
 	const { pythonDir, useUv } = params;
 	const evalScript = path.join(pythonDir, "evaluate.py");
@@ -253,6 +254,36 @@ export function buildEvaluateCommand(params: {
 	parts.push("--screenshot-dir", params.screenshotDir);
 	if (params.browserBackend) {
 		parts.push("--browser-backend", params.browserBackend);
+	}
+	if (params.postEval) {
+		parts.push("--post-eval");
+	}
+
+	return parts.join(" ");
+}
+
+export function buildGenerateTasksCommand(params: {
+	pythonDir: string;
+	useUv: boolean;
+	personaCmd: string;
+	appDescription: string;
+	write?: boolean;
+}): string {
+	const { pythonDir, useUv } = params;
+	const script = path.join(pythonDir, "generate_tasks.py");
+
+	const parts: string[] = ["unset VIRTUAL_ENV;"];
+
+	if (useUv) {
+		parts.push("uv", "run", "--project", pythonDir, script);
+	} else {
+		parts.push("python3", script);
+	}
+
+	parts.push("--cmd", JSON.stringify(params.personaCmd));
+	parts.push("--app", JSON.stringify(params.appDescription));
+	if (params.write) {
+		parts.push("--write");
 	}
 
 	return parts.join(" ");
