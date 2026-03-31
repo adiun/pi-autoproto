@@ -49,20 +49,21 @@ class BrowserBackend(Protocol):
 # Shared shell-out helper
 # ---------------------------------------------------------------------------
 
-def _shell(cmd: str, retry: bool = True, timeout: int = 30) -> str:
+def _shell(cmd: str, retry: bool = True, timeout: int = 30, env: dict | None = None) -> str:
     """Run a CLI command. Returns stdout. Retries once on failure."""
     try:
         result = subprocess.run(
             shlex.split(cmd), capture_output=True, text=True, timeout=timeout,
+            env=env,
         )
         if result.returncode != 0:
             if retry:
-                return _shell(cmd, retry=False, timeout=timeout)
+                return _shell(cmd, retry=False, timeout=timeout, env=env)
             return f"[browser error] {result.stderr.strip()}"
         return result.stdout.strip()
     except subprocess.TimeoutExpired:
         if retry:
-            return _shell(cmd, retry=False, timeout=timeout)
+            return _shell(cmd, retry=False, timeout=timeout, env=env)
         return "[browser error] timeout"
     except Exception as e:
         return f"[browser error] {e}"
@@ -175,12 +176,17 @@ class PlaywrightCLIBackend:
         self._session = session
 
     def _run(self, cmd: str, **kwargs) -> str:
-        return _shell(f"playwright-cli -s={self._session} {cmd}", **kwargs)
+        # Default to 'chromium' (Playwright-managed) unless overridden via env.
+        # The 'chrome' channel requires system-installed Google Chrome;
+        # 'chromium' is installed via `npx playwright install chromium`.
+        env = {**os.environ, "PLAYWRIGHT_MCP_BROWSER": os.environ.get("PLAYWRIGHT_MCP_BROWSER", "chromium")}
+        return _shell(f"playwright-cli -s={self._session} {cmd}", env=env, **kwargs)
 
     # -- Navigation --
 
     def open(self, url: str) -> str:
-        return self._run(f"open {url} --headless")
+        # playwright-cli is headless by default; --headless is not a valid flag.
+        return self._run(f"open {url}")
 
     # -- Observation --
 
