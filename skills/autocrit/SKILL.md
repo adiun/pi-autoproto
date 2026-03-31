@@ -105,6 +105,8 @@ Call `init_autocrit` with mode, experiment name, and persona command.
 
 Determine the persona agent command: use `--cmd` with your own CLI. For example, if you are Claude Code, use `claude -p`. If you are pi, use `pi -p`. Ask the user if they want a different LLM.
 
+For browser backend: default is `agent-browser` (vision mode — annotated screenshots). If the user's app uses modals/overlays heavily, or if they want lower token costs, suggest `playwright-cli` (text/snapshot mode). Only ask about this if the user brings it up or if `agent-browser` is not installed — don't overwhelm with options by default.
+
 ### 4. Brainstorm Approaches (Full Mode)
 
 Read `persona.md`, `requirements.md`, and `hypotheses.md` carefully.
@@ -209,9 +211,9 @@ Present to the user: comparative report, recommendations, bias flags.
 
 ## Constraints
 
-- **Vision mode (default).** The evaluator sees actual screenshots with numbered labels on interactive elements.
-- **Design for visual quality**: layout, color, typography, whitespace matter.
-- **Don't shrink text for density.** The vision agent penalizes small text — keep font sizes ≥ 13px for body text, ≥ 11px for labels. Prefer layout changes (columns, dedicated views) over making everything smaller.
+- **Browser backends.** Two backends are available, set via `init_autocrit`:
+  - **agent-browser** (default) — vision mode with annotated screenshots. The persona sees numbered labels on interactive elements. Design for visual quality: layout, color, typography, whitespace matter. Don't shrink text for density — the vision agent penalizes small text (keep font sizes ≥ 13px body, ≥ 11px labels).
+  - **playwright-cli** — text/snapshot mode using Playwright's accessibility tree. The persona sees structured text, not pixels. Better for apps with modals/overlays. Lower token cost, no vision model needed. Visual polish matters less; semantic structure and ARIA roles matter more.
 - **Use Vite+ for all apps.** `package.json` with `vite-plus`, `vite.config.js`. Install with `pnpm install` or `npm install`.
 - **Only modify files in `src/`, `package.json`, and `vite.config.js`.**
 - **Always create `.gitignore`** with `node_modules/` and `dist/` before committing.
@@ -219,7 +221,7 @@ Present to the user: comparative report, recommendations, bias flags.
 - **P0 first.** Never work on P1/P2 while P0 tasks fail.
 - **Run `vp check src/` after every edit.** Always target `src/` to avoid linting `node_modules/`.
 - **Score variance is real.** Single-run scores can swing 30+ points on the same code. Don't trust deltas under 15 points from a single quick run. If a task shows a surprising score change, re-run it before making a keep/discard decision.
-- **Timeouts ≠ failures.** If a task times out but passed in a previous iteration with unchanged code, it's an infrastructure issue (LLM latency, agent-browser). Do not re-run evaluations because of timeouts. Log the iteration and move on.
+- **Timeouts ≠ failures.** If a task times out but passed in a previous iteration with unchanged code, it's an infrastructure issue (LLM latency, browser backend). Do not re-run evaluations because of timeouts. Log the iteration and move on.
 - **log_iteration auto-reads scores.** You don't need to manually compute composite/P0/P1/P2 — just pass iteration number, description, and kept. Scores are read from eval_results.json.
 - **Wishlist items are desires, not requirements.** Diagnose root causes.
 - **approach.md is read-only during iteration.** Don't pivot mid-prototype.

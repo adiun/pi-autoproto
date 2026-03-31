@@ -128,6 +128,7 @@ export function reconstructState(cwd: string): AutocritState {
 					state.mode = entry.mode ?? "quick";
 					state.experimentName = entry.experiment ?? null;
 					state.personaCmd = entry.personaCmd ?? null;
+					state.browserBackend = entry.browserBackend ?? "agent-browser";
 					state.branches = entry.branches ?? [];
 					state.resultsDir = entry.resultsDir ?? null;
 					state.startTime = entry.startTime ?? null;

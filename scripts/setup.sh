@@ -17,12 +17,26 @@ else
     MISSING=1
 fi
 
-# agent-browser
-if command -v agent-browser &>/dev/null; then
-    echo "✅ agent-browser"
+# Browser backend (agent-browser or playwright-cli)
+BROWSER_BACKEND=${AUTOCRIT_BROWSER_BACKEND:-agent-browser}
+if [ "$BROWSER_BACKEND" = "playwright-cli" ]; then
+    if command -v playwright-cli &>/dev/null; then
+        echo "✅ playwright-cli"
+    else
+        echo "❌ playwright-cli — install: npm install -g @playwright/cli@latest"
+        MISSING=1
+    fi
 else
-    echo "❌ agent-browser — install: npm install -g agent-browser && agent-browser install"
-    MISSING=1
+    if command -v agent-browser &>/dev/null; then
+        echo "✅ agent-browser"
+    else
+        echo "❌ agent-browser — install: npm install -g agent-browser && agent-browser install"
+        MISSING=1
+    fi
+    # Also check if playwright-cli is available as an alternative
+    if command -v playwright-cli &>/dev/null; then
+        echo "ℹ️  playwright-cli also available (use AUTOCRIT_BROWSER_BACKEND=playwright-cli to switch)"
+    fi
 fi
 
 # uv (preferred Python runner)

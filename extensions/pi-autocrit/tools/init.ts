@@ -16,7 +16,7 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 		name: "init_autocrit",
 		label: "Init Autocrit",
 		description:
-			"Initialize an autocrit evaluation session. Validates dependencies (agent-browser, uv/python, git), " +
+			"Initialize an autocrit evaluation session. Validates dependencies (browser backend, uv/python, git), " +
 			"creates results directory structure, and sets up experiment state. Call once before starting the evaluation loop.",
 		promptSnippet: "Initialize autocrit session (mode, experiment name, persona command). Call once before evaluating.",
 		promptGuidelines: [
@@ -34,16 +34,35 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 			persona_cmd: Type.String({
 				description: "Command to run the persona LLM agent (e.g. 'claude -p', 'pi -p'). Must accept input on stdin.",
 			}),
+			browser_backend: Type.Optional(
+				StringEnum(["agent-browser", "playwright-cli"] as const, {
+					description: "Browser backend for evaluation. Default: agent-browser. Use playwright-cli for text/snapshot mode.",
+				}),
+			),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const runtime = getRuntime();
 
 			// Check dependencies
-			const deps = await checkDependencies((cmd, args) => pi.exec(cmd, args));
+			let browserBackendName = params.browser_backend ?? "agent-browser";
+			let deps = await checkDependencies((cmd, args) => pi.exec(cmd, args), browserBackendName);
+			let backendAutoSwitched = false;
+
+			// If the requested backend isn't installed, try the other one
+			if (!deps.browserBackend && !params.browser_backend) {
+				const fallback = browserBackendName === "agent-browser" ? "playwright-cli" : "agent-browser";
+				const fallbackDeps = await checkDependencies((cmd, args) => pi.exec(cmd, args), fallback);
+				if (fallbackDeps.browserBackend) {
+					browserBackendName = fallback;
+					deps = fallbackDeps;
+					backendAutoSwitched = true;
+				}
+			}
+
 			const depReport = formatDependencyReport(deps);
 
-			if (!deps.git || !deps.agentBrowser || (!deps.uv && !deps.python3)) {
+			if (!deps.git || !deps.browserBackend || (!deps.uv && !deps.python3)) {
 				return {
 					content: [{ type: "text", text: `❌ Missing dependencies:\n\n${depReport}\n\nInstall the missing dependencies and try again.` }],
 					details: { dependencies: deps },
@@ -66,6 +85,7 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 			state.mode = params.mode;
 			state.experimentName = params.experiment_name;
 			state.personaCmd = params.persona_cmd;
+			state.browserBackend = browserBackendName as import("../state.js").BrowserBackendName;
 
 			// Preserve existing startTime when resuming, else set now
 			if (existingState.active && existingState.startTime) {
@@ -106,8 +126,21 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 			const pythonDir = getPythonDir();
 			const runner = deps.uv ? "uv" : "python3";
 
+			// Invalidate cached dev server if cwd changed
+			if (runtime.devServerPort !== null && runtime.lastCwd !== null && runtime.lastCwd !== ctx.cwd) {
+				try { await runtime.devServerCleanup?.(); } catch { /* ignore */ }
+				runtime.devServerPort = null;
+				runtime.devServerCleanup = null;
+			}
+			runtime.lastCwd = ctx.cwd;
+
 			let response = `✅ Autocrit initialized: "${params.experiment_name}"\n`;
 			response += `Mode: ${params.mode}\n`;
+			response += `Browser: ${state.browserBackend}`;
+			if (backendAutoSwitched) {
+				response += ` (auto-selected — agent-browser not found)`;
+			}
+			response += `\n`;
 			response += `Persona agent: ${params.persona_cmd}\n`;
 			response += `Results: ${state.resultsDir}\n`;
 			response += `Python runner: ${runner}\n`;

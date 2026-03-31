@@ -57,7 +57,9 @@ Then `/reload` in pi.
 ### Prerequisites
 
 1. [pi](https://pi.dev/)
-2. [agent-browser](https://github.com/nicobailey/agent-browser): `npm install -g agent-browser && agent-browser install`
+2. A browser backend (one of):
+   - [agent-browser](https://github.com/vercel-labs/agent-browser): `npm install -g agent-browser && agent-browser install` (default, vision mode)
+   - [playwright-cli](https://github.com/microsoft/playwright-cli): `npm install -g @playwright/cli@latest` (text/snapshot mode)
 3. [uv](https://docs.astral.sh/uv/): `curl -LsSf https://astral.sh/uv/install.sh | sh`
 4. An API key for your preferred LLM provider (configured in pi)
 
@@ -76,7 +78,7 @@ The agent guides you through creating a persona, then starts the evaluation loop
 ### 2. The loop
 
 1. The agent edits the app code
-2. `run_evaluation` launches the synthetic persona, who interacts with the app via agent-browser in a real browser
+2. `run_evaluation` launches the synthetic persona, who interacts with the app via a browser backend (agent-browser or playwright-cli) in a real browser
 3. If the score improved, keep the change. If it dropped, discard and revert.
 4. `log_iteration` records the result and updates the dashboard
 5. Repeat
@@ -121,7 +123,13 @@ The package has two parts: an **extension** (tools, state, UI) and a **skill** (
 
 The persona agent runs in a completely separate `pi -p` process. It has no access to the coding agent's conversation, the source code, or any context about what was built or why. It can only see what a real user would see: the running app in a browser. This is like black-box testing - prevents the evaluation from being contaminated by knowledge of the implementation.
 
-Via `agent-browser`, the persona navigates pages, clicks buttons, fills forms, gets confused, tries alternatives, succeeds or fails. Each step produces a reasoning trace. The evaluation captures whether a task was completed but also how many steps it took, where the persona got stuck, what they wished was different, and verbatim quotes from the persona explaining their experience in their own words.
+Two browser backends are supported:
+- **agent-browser** (default) — uses annotated screenshots (vision mode). The persona "sees" numbered labels overlaid on the page.
+- **playwright-cli** — uses Playwright's accessibility tree (text/snapshot mode). The persona "sees" structured text like a screen reader. Better for modals/overlays, lower token cost, no vision model required.
+
+Set the backend in `init_autocrit` or via `AUTOCRIT_BROWSER_BACKEND=playwright-cli`.
+
+Via the browser backend (agent-browser or playwright-cli), the persona navigates pages, clicks buttons, fills forms, gets confused, tries alternatives, succeeds or fails. Each step produces a reasoning trace. The evaluation captures whether a task was completed but also how many steps it took, where the persona got stuck, what they wished was different, and verbatim quotes from the persona explaining their experience in their own words.
 
 Tasks are organized by priority tier and scored by weighted composite:
 

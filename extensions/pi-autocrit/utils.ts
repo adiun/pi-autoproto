@@ -15,7 +15,8 @@ const __dirname = path.dirname(__filename);
 // ---------------------------------------------------------------------------
 
 export interface DependencyStatus {
-	agentBrowser: boolean;
+	browserBackend: boolean;
+	browserBackendName: string;
 	uv: boolean;
 	python3: boolean;
 	git: boolean;
@@ -23,6 +24,7 @@ export interface DependencyStatus {
 
 export async function checkDependencies(
 	exec: (cmd: string, args: string[]) => Promise<{ code: number | null }>,
+	browserBackendName: string = "agent-browser",
 ): Promise<DependencyStatus> {
 	const check = async (cmd: string, args: string[]): Promise<boolean> => {
 		try {
@@ -34,7 +36,8 @@ export async function checkDependencies(
 	};
 
 	return {
-		agentBrowser: await check("which", ["agent-browser"]),
+		browserBackend: await check("which", [browserBackendName]),
+		browserBackendName,
 		uv: await check("which", ["uv"]),
 		python3: await check("which", ["python3"]),
 		git: await check("which", ["git"]),
@@ -47,18 +50,22 @@ export function formatDependencyReport(deps: DependencyStatus): string {
 	const fail = "❌";
 
 	lines.push(`${deps.git ? ok : fail} git`);
-	lines.push(`${deps.agentBrowser ? ok : fail} agent-browser`);
+	lines.push(`${deps.browserBackend ? ok : fail} ${deps.browserBackendName}`);
 	lines.push(`${deps.uv ? ok : fail} uv (Python package manager)`);
 	if (!deps.uv) {
 		lines.push(`${deps.python3 ? ok : fail} python3 (fallback)`);
 	}
 
-	const allGood = deps.git && deps.agentBrowser && (deps.uv || deps.python3);
+	const allGood = deps.git && deps.browserBackend && (deps.uv || deps.python3);
 	if (!allGood) {
 		lines.push("");
 		lines.push("Missing dependencies:");
-		if (!deps.agentBrowser) {
-			lines.push("  agent-browser: npm install -g agent-browser && agent-browser install");
+		if (!deps.browserBackend) {
+			if (deps.browserBackendName === "playwright-cli") {
+				lines.push("  playwright-cli: npm install -g @playwright/cli@latest");
+			} else {
+				lines.push("  agent-browser: npm install -g agent-browser && agent-browser install");
+			}
 		}
 		if (!deps.uv && !deps.python3) {
 			lines.push("  uv: curl -LsSf https://astral.sh/uv/install.sh | sh");
@@ -91,6 +98,7 @@ export function buildEvaluateCommand(params: {
 	screenshotDir: string;
 	personaCmd: string;
 	port?: number;
+	browserBackend?: string;
 }): string {
 	const { pythonDir, useUv } = params;
 	const evalScript = path.join(pythonDir, "evaluate.py");
@@ -127,6 +135,9 @@ export function buildEvaluateCommand(params: {
 	}
 	parts.push("--output-dir", params.outputDir);
 	parts.push("--screenshot-dir", params.screenshotDir);
+	if (params.browserBackend) {
+		parts.push("--browser-backend", params.browserBackend);
+	}
 
 	return parts.join(" ");
 }

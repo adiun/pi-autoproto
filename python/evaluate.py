@@ -1,4 +1,4 @@
-"""Autodev evaluation engine — persona agent drives agent-browser and scores the app."""
+"""Autodev evaluation engine — persona agent drives a browser backend and scores the app."""
 
 import argparse
 import http.server
@@ -15,6 +15,7 @@ import threading
 import time
 import urllib.request
 
+from browser_backend import BrowserBackend, create_backend
 from persona_parser import Persona, PersonaTask, PersonaVariant, TaskResult, compute_composite, parse
 
 DEFAULT_MAX_STEPS = 15
@@ -103,33 +104,32 @@ def start_vite_server(port: int) -> subprocess.Popen:
 # Browser helper
 # ---------------------------------------------------------------------------
 
-def run_browser(cmd: str, retry: bool = True) -> str:
-    """Run an agent-browser command. Returns stdout. Retries once on failure."""
-    try:
-        result = subprocess.run(
-            shlex.split(cmd), capture_output=True, text=True, timeout=30
-        )
-        if result.returncode != 0:
-            if retry:
-                return run_browser(cmd, retry=False)
-            return f"[browser error] {result.stderr.strip()}"
-        return result.stdout.strip()
-    except subprocess.TimeoutExpired:
-        if retry:
-            return run_browser(cmd, retry=False)
-        return "[browser error] timeout"
-    except Exception as e:
-        return f"[browser error] {e}"
+# Module-level browser backend instance, set in main().
+_browser: BrowserBackend | None = None
 
 
 def _wait_after_action(wait_ms: int | None = None, supplemental_ms: int = 200) -> None:
     """Wait for the page to settle after an action."""
+    assert _browser is not None
     if wait_ms is not None:
-        run_browser(f"agent-browser wait {wait_ms}")
+        _browser.wait(wait_ms)
     else:
-        run_browser("agent-browser wait --load networkidle")
+        _browser.wait()
         if supplemental_ms > 0:
-            run_browser(f"agent-browser wait {supplemental_ms}")
+            _browser.wait(supplemental_ms)
+
+
+def _detect_modal_ref(snapshot: str) -> str | None:
+    """If the snapshot contains a dialog/modal role, return its ref or role name."""
+    # Look for lines like: dialog "Modal Title" [ref=e12]
+    # or: [role="dialog"]
+    for line in snapshot.split("\n"):
+        lower = line.lower()
+        if "dialog" in lower or "modal" in lower:
+            ref_match = re.search(r'@?(e\d+)', line)
+            if ref_match:
+                return ref_match.group(1)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -262,11 +262,9 @@ def _capture_annotated_screenshot(step: int) -> tuple[str, str]:
 
     The legend maps [N] labels to element roles/names.
     """
+    assert _browser is not None
     path = f"/tmp/autocrit_vision_step_{step}.png"
-    output = run_browser(f"agent-browser screenshot --annotate {path}")
-    # The legend is printed to stdout by agent-browser
-    legend = output if not output.startswith("[browser error]") else ""
-    return path, legend
+    return _browser.screenshot_annotated(path)
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +296,8 @@ def _build_vision_prompt(
         f'{{"action": "select", "ref": "e4", "value": "option_value", "reasoning": "why"}}\n'
         f'{{"action": "press", "key": "Enter", "reasoning": "why"}}\n'
         f'{{"action": "scroll", "direction": "down", "reasoning": "why"}}\n'
+        f'{{"action": "scroll", "direction": "down", "ref": "e5", "reasoning": "scroll inside this container"}}\n'
+        f'{{"action": "scrollintoview", "ref": "e12", "reasoning": "bring element into view"}}\n'
         f'{{"action": "done", "completed": true, "found_answer": "...", "notes": "..."}}\n'
         f'{{"action": "done", "completed": false, "stuck_reason": "what confused you"}}'
     )
@@ -330,6 +330,8 @@ def _build_prompt(
         f'To select a dropdown:   {{"action": "select", "ref": "e4", "value": "option_value", "reasoning": "why"}}\n'
         f'To press a key:         {{"action": "press", "key": "Enter", "reasoning": "why"}}\n'
         f'To scroll the page:     {{"action": "scroll", "direction": "down", "reasoning": "why"}}\n'
+        f'Scroll in container:    {{"action": "scroll", "direction": "down", "ref": "e5", "reasoning": "scroll inside this element"}}\n'
+        f'Scroll element to view: {{"action": "scrollintoview", "ref": "e12", "reasoning": "bring element into view"}}\n'
         f'To report success:      {{"action": "done", "completed": true, "found_answer": "...", "notes": "..."}}\n'
         f'To report giving up:    {{"action": "done", "completed": false, "stuck_reason": "what confused you"}}'
     )
@@ -353,8 +355,10 @@ def evaluate_task(
     vision_tmp_files: list[str] = []
     timing: dict[str, float] = {}
 
+    assert _browser is not None
+
     # Navigate to start page
-    run_browser(f"agent-browser open http://localhost:{port}")
+    _browser.open(f"http://localhost:{port}")
 
     completed = False
     found_answer = None
@@ -398,7 +402,7 @@ def evaluate_task(
                     continue
             else:
                 # Text mode: full accessibility tree
-                snapshot = run_browser(f"agent-browser snapshot {snapshot_flags}")
+                snapshot = _browser.snapshot(snapshot_flags)
                 if snapshot.startswith("[browser error]"):
                     stuck_points.append(f"Step {steps}: {snapshot}")
                     if verbose:
@@ -408,6 +412,15 @@ def evaluate_task(
                 # Compress whitespace before truncation to reclaim snapshot budget
                 snapshot = re.sub(r'\n{3,}', '\n\n', snapshot)
                 snapshot = re.sub(r' +$', '', snapshot, flags=re.MULTILINE)
+
+                # Auto-scope to modal/dialog if one is open
+                modal_ref = _detect_modal_ref(snapshot)
+                if modal_ref:
+                    scoped = _browser.snapshot_scoped("dialog")
+                    if not scoped.startswith("[browser error]"):
+                        snapshot = scoped
+                        snapshot = re.sub(r'\n{3,}', '\n\n', snapshot)
+                        snapshot = re.sub(r' +$', '', snapshot, flags=re.MULTILINE)
 
                 if len(snapshot) > max_snapshot_chars:
                     snapshot = snapshot[:max_snapshot_chars] + f"\n[...truncated, {len(snapshot)} chars total]"
@@ -444,33 +457,33 @@ def evaluate_task(
                 break
             elif act == "click":
                 ref = action.get("ref", "")
-                result = run_browser(f"agent-browser click @{ref}")
+                result = _browser.click(ref)
                 if wait_after_action:
                     _wait_after_action(wait_ms)
-                history.append(f"clicked @{ref} ({reasoning}) → {result[:80]}")
+                history.append(f"clicked {ref} ({reasoning}) → {result[:80]}")
                 if verbose:
                     print(f"    -> {result[:120]}")
             elif act == "fill":
                 ref = action.get("ref", "")
                 text = action.get("text", "")
-                result = run_browser(f"agent-browser fill @{ref} '{text}'")
+                result = _browser.fill(ref, text)
                 if wait_after_action:
                     _wait_after_action(wait_ms)
-                history.append(f"filled @{ref} with \"{text}\" ({reasoning}) → {result[:80]}")
+                history.append(f"filled {ref} with \"{text}\" ({reasoning}) → {result[:80]}")
                 if verbose:
                     print(f"    -> {result[:120]}")
             elif act == "select":
                 ref = action.get("ref", "")
                 value = action.get("value", "")
-                result = run_browser(f"agent-browser select @{ref} '{value}'")
+                result = _browser.select(ref, value)
                 if wait_after_action:
                     _wait_after_action(wait_ms)
-                history.append(f'selected @{ref} value "{value}" ({reasoning}) → {result[:80]}')
+                history.append(f'selected {ref} value "{value}" ({reasoning}) → {result[:80]}')
                 if verbose:
                     print(f"    -> {result[:120]}")
             elif act == "press":
                 key = action.get("key", "")
-                result = run_browser(f"agent-browser press {key}")
+                result = _browser.press(key)
                 if wait_after_action:
                     _wait_after_action(wait_ms)
                 history.append(f"pressed {key} ({reasoning}) → {result[:80]}")
@@ -478,8 +491,16 @@ def evaluate_task(
                     print(f"    -> {result[:120]}")
             elif act == "scroll":
                 direction = action.get("direction", "down")
-                result = run_browser(f"agent-browser scroll {direction}")
-                history.append(f"scrolled {direction} ({reasoning}) → {result[:80]}")
+                ref = action.get("ref")
+                result = _browser.scroll(direction, ref)
+                label = f"scrolled {direction}" + (f" in {ref}" if ref else "")
+                history.append(f"{label} ({reasoning}) → {result[:80]}")
+                if verbose:
+                    print(f"    -> {result[:120]}")
+            elif act == "scrollintoview":
+                ref = action.get("ref", "")
+                result = _browser.scrollintoview(ref)
+                history.append(f"scrolled {ref} into view ({reasoning}) → {result[:80]}")
                 if verbose:
                     print(f"    -> {result[:120]}")
             else:
@@ -495,7 +516,7 @@ def evaluate_task(
             os.makedirs(screenshot_dir, exist_ok=True)
             safe_name = re.sub(r'[^\w\-]', '_', task.name.lower())
             path = os.path.join(screenshot_dir, f"task_{task.number}_{safe_name}.png")
-            run_browser(f"agent-browser screenshot {path}")
+            _browser.screenshot(path)
 
         # Score the task
         t_score_start = time.time()
@@ -1012,6 +1033,9 @@ def main() -> None:
         help="Path to separate requirements.md (tasks/scoring). If omitted, parsed from persona.md.")
     parser.add_argument("--variants", type=int, default=0,
         help="Number of persona variants to auto-generate and evaluate (0 = single persona, no variants)")
+    parser.add_argument("--browser-backend", type=str, default=None,
+        help="Browser backend: 'agent-browser' (default) or 'playwright-cli'. "
+             "Falls back to AUTOCRIT_BROWSER_BACKEND env var.")
     args = parser.parse_args()
 
     # --quick sets constituent flags
@@ -1035,6 +1059,14 @@ def main() -> None:
     # Load .env early so ANTHROPIC_API_KEY and AUTOCRIT_EVAL_CMD are available
     _load_env_file()
 
+    # Create browser backend
+    global _browser
+    _browser = create_backend(args.browser_backend)
+
+    # Force text mode if backend doesn't support vision
+    if not _browser.supports_vision:
+        args.vision = False
+
     # Resolve persona agent command
     if args.cmd:
         os.environ["AUTOCRIT_EVAL_CMD"] = args.cmd
@@ -1046,9 +1078,12 @@ def main() -> None:
         print("  echo 'AUTOCRIT_EVAL_CMD=\"claude -p\"' > .env", file=sys.stderr)
         sys.exit(1)
 
-    if not shutil.which("agent-browser"):
-        print("Error: agent-browser not found.")
-        print("Install: npm install -g agent-browser && agent-browser install")
+    if not shutil.which(_browser.name):
+        print(f"Error: {_browser.name} not found.")
+        if _browser.name == "agent-browser":
+            print("Install: npm install -g agent-browser && agent-browser install")
+        elif _browser.name == "playwright-cli":
+            print("Install: npm install -g @playwright/cli@latest")
         sys.exit(1)
 
     use_vite = os.path.exists("package.json")
@@ -1116,6 +1151,7 @@ def main() -> None:
     if not args.quiet:
         mode = "Vite+" if use_vite else "Python"
         flags = []
+        flags.append(f"{_browser.name}")
         flags.append("vision" if args.vision else "text")
         if args.quick:
             flags.append("quick")
@@ -1257,7 +1293,7 @@ def main() -> None:
                     print()
 
             # Close browser
-            run_browser("agent-browser close")
+            _browser.close()
 
             # Convergence analysis
             convergence = analyze_convergence(variant_results_list, persona)
@@ -1310,7 +1346,7 @@ def main() -> None:
             final_results, scores, calibration = _run_evaluation(persona)
 
             # Close browser
-            run_browser("agent-browser close")
+            _browser.close()
 
             if args.calibrate and calibration:
                 with open(os.path.join(args.output_dir, "calibration_results.json"), "w") as f:

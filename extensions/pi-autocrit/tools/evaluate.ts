@@ -38,7 +38,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		label: "Run Evaluation",
 		description:
 			"Run persona-driven evaluation of the current web app. Wraps evaluate.py: " +
-			"starts the dev server if needed, runs agent-browser with the persona agent, " +
+			"starts the dev server if needed, runs the persona agent via the configured browser backend, " +
 			"and returns structured results (scores, per-task feedback, stuck points, wishlist). " +
 			"When running all tasks, executes them individually with per-task timeouts and auto-retries. " +
 			"Output is truncated for context efficiency — read eval_results.json for full details.",
@@ -157,6 +157,9 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		// Find a free port
 		const port = await findFreePort();
 
+		// Kill anything already on this port (stale server from previous evaluation)
+		await pi.exec("bash", ["-c", `lsof -ti:${port} | xargs kill -9 2>/dev/null`], { timeout: 5000 });
+
 		const usePnpm = fs.existsSync(path.join(cwd, "pnpm-lock.yaml"));
 		const runner = usePnpm ? "pnpm exec" : "npx";
 		// Start server in background via nohup so it survives parent process changes.
@@ -213,6 +216,13 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 	async function getOrCreateDevServer(cwd: string): Promise<{ port: number; cleanup: () => Promise<void> }> {
 		const runtime = getRuntime();
 
+		// Invalidate cached server if cwd changed (different app)
+		if (runtime.devServerPort !== null && runtime.lastCwd !== null && runtime.lastCwd !== cwd) {
+			try { await runtime.devServerCleanup?.(); } catch { /* ignore */ }
+			runtime.devServerPort = null;
+			runtime.devServerCleanup = null;
+		}
+
 		// Check if we have a cached server that's still alive
 		if (runtime.devServerPort !== null && runtime.devServerCleanup !== null) {
 			try {
@@ -237,6 +247,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		const server = await startDevServer(cwd);
 		runtime.devServerPort = server.port;
 		runtime.devServerCleanup = server.cleanup;
+		runtime.lastCwd = cwd;
 		return server;
 	}
 
@@ -320,6 +331,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 				screenshotDir: runCtx.screenshotDir,
 				personaCmd: state.personaCmd!,
 				port: devServer.port,
+				browserBackend: state.browserBackend,
 			});
 
 			let result = await pi.exec("bash", ["-c", command], {
@@ -366,7 +378,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 					steps: 0,
 					stuck_points: [didTimeout ? "Infrastructure timeout (not a UX failure)" : "Evaluation error"],
 					found_answer: null,
-					notes: didTimeout ? "Task timed out — LLM or agent-browser was unresponsive" : "evaluate.py returned an error",
+					notes: didTimeout ? "Task timed out — LLM or browser backend was unresponsive" : "evaluate.py returned an error",
 					persona_feedback: "",
 					wishlist: [],
 					timed_out: didTimeout,
@@ -437,6 +449,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			outputDir: runCtx.iterDir,
 			screenshotDir: runCtx.screenshotDir,
 			personaCmd: state.personaCmd!,
+			browserBackend: state.browserBackend,
 		});
 
 		// Estimate timeout: tasks × per-task timeout × variant count

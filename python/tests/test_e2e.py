@@ -81,7 +81,7 @@ def _fake_exists_factory(*true_patterns):
 # E2E 1: Single-persona CLI evaluation flow
 # ---------------------------------------------------------------------------
 
-@patch("evaluate.run_browser", return_value="")
+@patch("evaluate.create_backend")
 @patch("evaluate.start_vite_server")
 @patch("evaluate.ensure_packages_installed")
 @patch("evaluate.parse")
@@ -90,7 +90,7 @@ def _fake_exists_factory(*true_patterns):
 @patch("evaluate.os.path.exists")
 def test_e2e_single_persona(
     mock_exists, mock_which, mock_load_env,
-    mock_parse, mock_ensure_pkg, mock_vite, mock_browser,
+    mock_parse, mock_ensure_pkg, mock_vite, mock_create_backend,
     tmp_path,
 ):
     """Single-persona evaluation writes eval_results.json with correct structure."""
@@ -98,6 +98,13 @@ def test_e2e_single_persona(
     mock_parse.return_value = persona
 
     mock_exists.side_effect = _fake_exists_factory("package.json", "persona.md")
+
+    # Mock browser backend
+    mock_backend = MagicMock()
+    mock_backend.name = "agent-browser"
+    mock_backend.supports_vision = True
+    mock_backend.close.return_value = ""
+    mock_create_backend.return_value = mock_backend
 
     # Mock vite server process
     mock_proc = MagicMock()
@@ -160,7 +167,7 @@ def test_e2e_single_persona(
 # E2E 2: Multi-variant evaluation
 # ---------------------------------------------------------------------------
 
-@patch("evaluate.run_browser", return_value="")
+@patch("evaluate.create_backend")
 @patch("evaluate.start_vite_server")
 @patch("evaluate.ensure_packages_installed")
 @patch("evaluate.parse")
@@ -169,7 +176,7 @@ def test_e2e_single_persona(
 @patch("evaluate.os.path.exists")
 def test_e2e_multi_variant(
     mock_exists, mock_which, mock_load_env,
-    mock_parse, mock_ensure_pkg, mock_vite, mock_browser,
+    mock_parse, mock_ensure_pkg, mock_vite, mock_create_backend,
     tmp_path,
 ):
     """Multi-variant evaluation (--variants 3) writes eval_results.json with variants and convergence."""
@@ -177,6 +184,13 @@ def test_e2e_multi_variant(
     mock_parse.return_value = persona
 
     mock_exists.side_effect = _fake_exists_factory("package.json", "persona.md")
+
+    # Mock browser backend
+    mock_backend = MagicMock()
+    mock_backend.name = "agent-browser"
+    mock_backend.supports_vision = True
+    mock_backend.close.return_value = ""
+    mock_create_backend.return_value = mock_backend
 
     mock_proc = MagicMock()
     mock_proc.terminate = MagicMock()
