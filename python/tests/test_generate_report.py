@@ -8,7 +8,9 @@ import pytest
 
 from generate_report import (
     _load_prototype_results,
+    _load_best_scores_from_history,
     _load_requirements_versions,
+    _get_task_feedback,
     generate_report,
 )
 
@@ -368,6 +370,256 @@ def test_load_requirements_versions_includes_final(tmp_experiment_dir):
     versions = _load_requirements_versions(tmp_experiment_dir)
     filenames = [v[0] for v in versions]
     assert "requirements_final.md" in filenames
+
+
+# ---------------------------------------------------------------------------
+# 7. Verbatim feedback fallback to notes/stuck_points
+# ---------------------------------------------------------------------------
+
+def test_feedback_fallback_to_notes():
+    """When persona_feedback is empty, the report should use notes and stuck_points."""
+    with tempfile.TemporaryDirectory() as d:
+        proto = os.path.join(d, "proto-a")
+        os.makedirs(proto)
+        with open(os.path.join(proto, "eval_results.json"), "w") as f:
+            json.dump({
+                "composite_score": 70.0,
+                "p0_score": 80.0, "p1_score": 60.0, "p2_score": 50.0,
+                "tasks": [
+                    {
+                        "number": 1, "name": "Task with notes", "tier": "P0",
+                        "completed": True, "score": 80.0, "steps": 3,
+                        "stuck_points": [], "found_answer": "42",
+                        "notes": "The persona found the answer after some exploration",
+                        "persona_feedback": "",
+                        "wishlist": [],
+                    },
+                    {
+                        "number": 2, "name": "Task with stuck", "tier": "P0",
+                        "completed": False, "score": 0.0, "steps": 10,
+                        "stuck_points": ["Reached maximum step limit", "Couldn't find search button"],
+                        "found_answer": None,
+                        "notes": "",
+                        "persona_feedback": "",
+                        "wishlist": [],
+                    },
+                ],
+            }, f)
+
+        report = generate_report(d)
+        assert "The persona found the answer" in report
+        assert "Reached maximum step limit" in report
+        assert "Couldn't find search button" in report
+        # Should NOT show the "no feedback available" message since we have notes/stuck
+        assert "quick mode which skips feedback" not in report
+
+
+def test_feedback_shows_no_feedback_message_when_truly_empty():
+    """When all feedback sources are empty, show an explanatory message."""
+    with tempfile.TemporaryDirectory() as d:
+        proto = os.path.join(d, "proto-a")
+        os.makedirs(proto)
+        with open(os.path.join(proto, "eval_results.json"), "w") as f:
+            json.dump({
+                "composite_score": 70.0,
+                "p0_score": 80.0, "p1_score": 60.0, "p2_score": 50.0,
+                "tasks": [
+                    {
+                        "number": 1, "name": "Silent task", "tier": "P0",
+                        "completed": True, "score": 80.0, "steps": 3,
+                        "stuck_points": [], "found_answer": "42",
+                        "notes": "", "persona_feedback": "", "wishlist": [],
+                    },
+                ],
+            }, f)
+
+        report = generate_report(d)
+        assert "quick mode which skips feedback" in report
+
+
+def test_get_task_feedback_priority():
+    """_get_task_feedback should prefer persona_feedback > notes > stuck_points."""
+    # persona_feedback wins
+    assert _get_task_feedback({"persona_feedback": "Great!", "notes": "ok", "stuck_points": ["stuck"]}) == "Great!"
+    # notes is fallback
+    assert _get_task_feedback({"persona_feedback": "", "notes": "Agent notes", "stuck_points": ["stuck"]}) == "Agent notes"
+    # stuck_points is last resort
+    assert _get_task_feedback({"persona_feedback": "", "notes": "", "stuck_points": ["stuck1", "stuck2"]}) == "stuck1; stuck2"
+    # empty everything
+    assert _get_task_feedback({"persona_feedback": "", "notes": "", "stuck_points": []}) == ""
+
+
+# ---------------------------------------------------------------------------
+# 8. Score discrepancy detection from iteration history
+# ---------------------------------------------------------------------------
+
+def test_score_discrepancy_from_autocrit_jsonl(tmp_path):
+    """When autocrit.jsonl has a higher kept score than eval_results.json, flag it."""
+    exp = tmp_path / "results" / "recipe"
+    exp.mkdir(parents=True)
+
+    # Proto-a eval_results shows 71.4 (lost the 79.3 result)
+    proto = exp / "proto-a"
+    proto.mkdir()
+    (proto / "eval_results.json").write_text(json.dumps({
+        "composite_score": 71.4,
+        "p0_score": 82, "p1_score": 60, "p2_score": 48,
+        "tasks": [{"number": 1, "name": "T1", "tier": "P0", "completed": True,
+                   "score": 82, "steps": 3, "stuck_points": [], "found_answer": "yes",
+                   "notes": "ok", "persona_feedback": "", "wishlist": []}],
+    }))
+
+    # autocrit.jsonl in project root has the actual best
+    jsonl_path = tmp_path / "autocrit.jsonl"
+    lines = [
+        json.dumps({"type": "config", "mode": "full", "experiment": "recipe"}),
+        json.dumps({"type": "iteration", "iteration": 5, "composite": 71.4,
+                    "p0": 82, "p1": 60, "p2": 48, "kept": True,
+                    "branch": "autocrit/recipe/proto-a"}),
+        json.dumps({"type": "iteration", "iteration": 6, "composite": 79.3,
+                    "p0": 82, "p1": 63.3, "p2": 95, "kept": True,
+                    "branch": "autocrit/recipe/proto-a"}),
+    ]
+    jsonl_path.write_text("\n".join(lines) + "\n")
+
+    report = generate_report(str(exp))
+    assert "Score Discrepancies" in report
+    assert "79.3" in report
+    # Recommendations should also reflect the higher score
+    assert "peak: 79.3" in report
+
+
+def test_winner_uses_history_best_score(tmp_path):
+    """The 'strongest prototype' should use the best score from history, not just eval_results."""
+    exp = tmp_path / "results" / "recipe"
+    exp.mkdir(parents=True)
+
+    # Proto-a: eval shows 71.4, history has 79.3
+    proto_a = exp / "proto-a"
+    proto_a.mkdir()
+    (proto_a / "eval_results.json").write_text(json.dumps({
+        "composite_score": 71.4,
+        "p0_score": 82, "p1_score": 60, "p2_score": 48,
+        "tasks": [{"number": 1, "name": "T1", "tier": "P0", "completed": True,
+                   "score": 82, "steps": 3, "stuck_points": [], "found_answer": "yes",
+                   "notes": "", "persona_feedback": "", "wishlist": []}],
+    }))
+
+    # Proto-c: eval shows 74.9
+    proto_c = exp / "proto-c"
+    proto_c.mkdir()
+    (proto_c / "eval_results.json").write_text(json.dumps({
+        "composite_score": 74.9,
+        "p0_score": 79.7, "p1_score": 50.7, "p2_score": 96,
+        "tasks": [{"number": 1, "name": "T1", "tier": "P0", "completed": True,
+                   "score": 79.7, "steps": 3, "stuck_points": [], "found_answer": "yes",
+                   "notes": "", "persona_feedback": "", "wishlist": []}],
+    }))
+
+    # autocrit.jsonl has proto-a's actual peak at 79.3
+    jsonl_path = tmp_path / "autocrit.jsonl"
+    lines = [
+        json.dumps({"type": "config", "mode": "full", "experiment": "recipe"}),
+        json.dumps({"type": "iteration", "iteration": 6, "composite": 79.3,
+                    "p0": 82, "p1": 63.3, "p2": 95, "kept": True,
+                    "branch": "autocrit/recipe/proto-a"}),
+    ]
+    jsonl_path.write_text("\n".join(lines) + "\n")
+
+    report = generate_report(str(exp))
+    # Proto-a should be the winner (79.3 > 74.9)
+    rec_section = report.split("## Recommendations")[1]
+    assert "proto-a" in rec_section
+    assert "Strongest prototype" in rec_section
+
+
+# ---------------------------------------------------------------------------
+# 9. Exploratory tasks and session wishlist in report
+# ---------------------------------------------------------------------------
+
+def test_exploratory_tasks_in_report():
+    """Exploratory tasks should appear in their own section."""
+    with tempfile.TemporaryDirectory() as d:
+        proto = os.path.join(d, "proto-a")
+        os.makedirs(proto)
+        with open(os.path.join(proto, "eval_results.json"), "w") as f:
+            json.dump({
+                "composite_score": 70.0,
+                "p0_score": 80.0, "p1_score": 60.0, "p2_score": 50.0,
+                "tasks": [{"number": 1, "name": "Core task", "tier": "P0",
+                           "completed": True, "score": 80.0, "steps": 3,
+                           "stuck_points": [], "found_answer": "42",
+                           "notes": "", "persona_feedback": "ok", "wishlist": []}],
+                "exploratory_tasks": [
+                    {"number": 101, "name": "What if I clear everything?", "tier": "EX",
+                     "completed": True, "score": 60.0, "steps": 4,
+                     "stuck_points": [], "found_answer": "reset works",
+                     "notes": "The reset button worked but there was no confirmation",
+                     "persona_feedback": "I accidentally cleared my data once",
+                     "wishlist": []},
+                ],
+                "exploratory_score": 60.0,
+            }, f)
+
+        report = generate_report(d)
+        assert "## Exploratory Tasks" in report
+        assert "What if I clear everything?" in report
+        assert "accidentally cleared" in report
+        # Exploratory score in comparison table
+        assert "Exploratory score" in report
+        assert "60.0" in report
+
+
+def test_session_wishlist_in_report():
+    """Session wishlist should appear in its own section."""
+    with tempfile.TemporaryDirectory() as d:
+        proto = os.path.join(d, "proto-a")
+        os.makedirs(proto)
+        with open(os.path.join(proto, "eval_results.json"), "w") as f:
+            json.dump({
+                "composite_score": 70.0,
+                "p0_score": 80.0, "p1_score": 60.0, "p2_score": 50.0,
+                "tasks": [{"number": 1, "name": "Core task", "tier": "P0",
+                           "completed": True, "score": 80.0, "steps": 3,
+                           "stuck_points": [], "found_answer": "42",
+                           "notes": "", "persona_feedback": "ok", "wishlist": []}],
+                "session_wishlist": {
+                    "wishlist": [
+                        "I wish I could save my favorite recipes",
+                        "A weekly meal planner would change my Tuesday nights",
+                    ],
+                    "surprise": "I was surprised by how fast it found recipes",
+                    "would_use": "Yes, this is faster than scrolling through my usual recipe apps",
+                },
+            }, f)
+
+        report = generate_report(d)
+        assert "## Session Wishlist" in report
+        assert "save my favorite recipes" in report
+        assert "weekly meal planner" in report
+        assert "Surprise" in report
+        assert "faster than scrolling" in report
+        assert "Would use" in report
+
+
+def test_no_exploratory_section_when_absent():
+    """No exploratory section when no prototypes have exploratory tasks."""
+    with tempfile.TemporaryDirectory() as d:
+        proto = os.path.join(d, "proto-a")
+        os.makedirs(proto)
+        with open(os.path.join(proto, "eval_results.json"), "w") as f:
+            json.dump({
+                "composite_score": 70.0,
+                "p0_score": 80.0, "p1_score": 60.0, "p2_score": 50.0,
+                "tasks": [{"number": 1, "name": "T", "tier": "P0",
+                           "completed": True, "score": 80.0, "steps": 3,
+                           "stuck_points": [], "found_answer": "42",
+                           "notes": "", "persona_feedback": "ok", "wishlist": []}],
+            }, f)
+
+        report = generate_report(d)
+        assert "## Exploratory Tasks" not in report
+        assert "## Session Wishlist" not in report
 
 
 def test_requirements_evolution_section_with_multiple_versions(tmp_experiment_dir):
