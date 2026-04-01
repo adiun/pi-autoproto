@@ -231,19 +231,78 @@ In full mode, `generate_report` produces a structured comparison across prototyp
 
 When persona variants are used, the report also includes strongest signals, interesting disagreements, and bias detection.
 
-## Controlling costs
+## How autocrit compares
 
-Autocrit uses LLM calls in two places:
+### vs. traditional user testing
 
-1. **The coding agent (pi)** builds and modifies the app
-2. **The persona agent** evaluates the app by interacting with it in a browser
+Recruiting participants, scheduling sessions, synthesizing notes.
 
-Each evaluation involves multiple persona agent calls (one per task, plus scoring and feedback generation). Costs scale with the number of tasks and the number of iterations.
+- **Speed:** Overnight autonomous runs vs. weeks of recruiting and scheduling
+- **Cost:** LLM tokens vs. user incentives and researcher time
+- **Repeatability:** Versioned, comparable across iterations vs. qualitative and one-shot
+- **Tradeoff:** Synthetic behavior — plausible but not real human judgment. Autocrit generates hypotheses for user research, not conclusions that replace it.
 
-To manage this:
-- Start with quick mode and fewer tasks while you're getting a feel for things
+### vs. screenshot-based UI evaluation
+
+Showing an LLM a screenshot and asking it to rate the design.
+
+- **Interaction:** Real browser sessions (click, fill, scroll, get confused, try alternatives) vs. static image assessment
+- **Signal type:** Behavioral data (steps taken, where stuck, what paths tried) vs. aesthetic ratings ("the layout is clean")
+- **Failure modes:** The persona gives up, gets lost, misreads a label — the same things real users do. A screenshot judge only sees what's on screen, not what happens when you use it.
+
+### vs. automated testing (Cypress, Playwright)
+
+Functional test suites that assert correctness.
+
+- **What's tested:** UX quality and decision support vs. functional correctness
+- **Task type:** Judgment-based ("what would you cancel?") vs. assertion-based (`expect(button).toBeVisible()`)
+- **Feedback:** Qualitative and grounded in a persona's life context vs. pass/fail with stack traces
+
+### vs. A/B testing
+
+Splitting production traffic between variants and measuring conversion.
+
+- **Timing:** Pre-production (tests prototypes before building the real thing) vs. post-ship (requires production traffic)
+- **Scope:** Compares fundamentally different UX approaches vs. incremental variations (button colors, copy changes)
+- **Infrastructure:** Runs on a dev machine vs. requires production deployment and traffic volume
+
+### vs. LLM-as-judge (direct scoring)
+
+Asking an LLM to score an app description, spec, or screenshot directly.
+
+- **Evidence basis:** The persona actually uses the app in a browser vs. rating a description or image
+- **Transparency:** Full interaction traces — you can see exactly what happened at every step vs. a single score with rationale
+- **Output richness:** Scores + per-task feedback + stuck points + session wishlist vs. a number and a paragraph
+
+## Cost and performance
+
+Autocrit uses LLM calls in two places: the coding agent (pi) builds and modifies the app, and the persona agent evaluates it by interacting with it in a browser. Cost and time scale with the number of tasks, steps per task, and iterations.
+
+### Rough estimates
+
+| Configuration | Token cost | Wall-clock time |
+|---|---|---|
+| Quick mode, 8 tasks | ~$2–5 | 10–20 min |
+| Full mode, 8 tasks | ~$5–10 | 20–40 min |
+| Variant evaluation, 8 tasks × 4 variants | ~$15–25 | 60–120 min |
+| Full session (3 prototypes, 5 iters each, final variants) | ~$80–150 | 6–10 hours |
+
+Costs depend on model, provider pricing, and vision vs. text mode.
+
+### What drives cost
+
+- **Tasks × steps × LLM calls per step.** Each step is one LLM call. More tasks and higher `max_steps` = more calls.
+- **Vision mode.** Annotated screenshots (agent-browser) include image tokens. Text mode (playwright-cli) is cheaper.
+- **Feedback generation.** Full mode adds 1 LLM call per task for persona feedback, plus exploratory tasks and session wishlist.
+- **Variant mode.** Multiplies everything by the variant count (default 4).
+
+### Managing costs
+
+- Start with quick mode and fewer tasks while getting a feel for things
+- Use a cheaper model for the persona agent (e.g., `--model haiku`) — it navigates and clicks, it doesn't need the most capable model
+- Use playwright-cli (text mode) instead of agent-browser (vision mode) for lower per-call token cost
 - Set spending limits on your LLM provider's dashboard
-- Full mode with four persona variants across three prototypes is the most expensive and time-consuming configuration. 
+- Full mode with four persona variants across three prototypes is the most expensive configuration — save it for when the persona and tasks are dialed in
 
 ## License
 
