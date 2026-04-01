@@ -9,8 +9,9 @@ import * as path from "node:path";
 import * as os from "node:os";
 import {
 	createState, createRuntime, writeConfig, reconstructState,
-	appendIteration, currentBranchIterations, latestIteration,
-	bestIteration, isPlateaued, type AutocritState, type IterationResult,
+	appendIteration, appendTaskScores, currentBranchIterations, latestIteration,
+	bestIteration, isPlateaued, detectStuckTasks, taskScoreStats, taskScoreHistory,
+	compositeScoreStats, type AutocritState, type IterationResult, type TaskScoreEntry,
 } from "../extensions/pi-autocrit/state.js";
 
 let tmpDir: string;
@@ -247,5 +248,224 @@ describe("isPlateaued", () => {
 			makeIter({ iteration: 3, composite: 65, kept: true }),
 		];
 		assert.strictEqual(isPlateaued(state), false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Task score history, stuck detection, variance
+// ---------------------------------------------------------------------------
+
+function makeTaskScore(overrides: Partial<TaskScoreEntry> = {}): TaskScoreEntry {
+	return {
+		iteration: 0,
+		taskNumber: 1,
+		taskName: "Test Task",
+		tier: "P0",
+		score: 50,
+		stuckPoints: [],
+		branch: "main",
+		...overrides,
+	};
+}
+
+describe("appendTaskScores + reconstructState roundtrip", () => {
+	it("persists and reconstructs task scores", () => {
+		const state = createState();
+		state.active = true;
+		state.mode = "quick";
+		state.experimentName = "test";
+		writeConfig(tmpDir, state);
+
+		const entries = [
+			makeTaskScore({ iteration: 0, taskNumber: 1, score: 50 }),
+			makeTaskScore({ iteration: 0, taskNumber: 2, score: 80 }),
+			makeTaskScore({ iteration: 1, taskNumber: 1, score: 60 }),
+		];
+		appendTaskScores(tmpDir, entries);
+
+		const restored = reconstructState(tmpDir);
+		assert.strictEqual(restored.taskScores.length, 3);
+		assert.strictEqual(restored.taskScores[0].score, 50);
+		assert.strictEqual(restored.taskScores[2].taskNumber, 1);
+		assert.strictEqual(restored.taskScores[2].score, 60);
+	});
+});
+
+describe("taskScoreHistory", () => {
+	it("filters by task number and branch", () => {
+		const state = createState();
+		state.currentBranch = "proto-a";
+		state.taskScores = [
+			makeTaskScore({ taskNumber: 1, branch: "proto-a", score: 50 }),
+			makeTaskScore({ taskNumber: 2, branch: "proto-a", score: 80 }),
+			makeTaskScore({ taskNumber: 1, branch: "proto-b", score: 30 }),
+			makeTaskScore({ taskNumber: 1, branch: "proto-a", score: 60, iteration: 1 }),
+		];
+		const history = taskScoreHistory(state, 1);
+		assert.strictEqual(history.length, 2);
+		assert.strictEqual(history[0].score, 50);
+		assert.strictEqual(history[1].score, 60);
+	});
+});
+
+describe("detectStuckTasks", () => {
+	it("detects task with 3 consecutive zero scores and step-limit stuck", () => {
+		const state = createState();
+		state.currentBranch = "main";
+		state.iterations = [
+			makeIter({ iteration: 0, kept: true }),
+			makeIter({ iteration: 1, kept: true }),
+			makeIter({ iteration: 2, kept: true }),
+		];
+		state.taskScores = [
+			makeTaskScore({ iteration: 0, taskNumber: 6, score: 0, stuckPoints: ["Reached maximum step limit"] }),
+			makeTaskScore({ iteration: 1, taskNumber: 6, score: 0, stuckPoints: ["Reached maximum step limit"] }),
+			makeTaskScore({ iteration: 2, taskNumber: 6, score: 0, stuckPoints: ["Reached maximum step limit"], taskName: "Near miss" }),
+		];
+		const stuck = detectStuckTasks(state);
+		assert.strictEqual(stuck.length, 1);
+		assert.strictEqual(stuck[0].taskNumber, 6);
+		assert.strictEqual(stuck[0].consecutiveZeros, 3);
+	});
+
+	it("does not flag tasks that scored non-zero in latest iteration", () => {
+		const state = createState();
+		state.currentBranch = "main";
+		state.iterations = [
+			makeIter({ iteration: 0, kept: true }),
+			makeIter({ iteration: 1, kept: true }),
+			makeIter({ iteration: 2, kept: true }),
+		];
+		state.taskScores = [
+			makeTaskScore({ iteration: 0, taskNumber: 6, score: 0, stuckPoints: ["Reached maximum step limit"] }),
+			makeTaskScore({ iteration: 1, taskNumber: 6, score: 0, stuckPoints: ["Reached maximum step limit"] }),
+			makeTaskScore({ iteration: 2, taskNumber: 6, score: 50, stuckPoints: [] }),
+		];
+		const stuck = detectStuckTasks(state);
+		assert.strictEqual(stuck.length, 0);
+	});
+
+	it("only counts kept iterations", () => {
+		const state = createState();
+		state.currentBranch = "main";
+		state.iterations = [
+			makeIter({ iteration: 0, kept: true }),
+			makeIter({ iteration: 1, kept: false }),
+			makeIter({ iteration: 2, kept: true }),
+			makeIter({ iteration: 3, kept: true }),
+		];
+		state.taskScores = [
+			makeTaskScore({ iteration: 0, taskNumber: 6, score: 0, stuckPoints: ["Reached maximum step limit"] }),
+			makeTaskScore({ iteration: 1, taskNumber: 6, score: 0, stuckPoints: ["Reached maximum step limit"] }),
+			makeTaskScore({ iteration: 2, taskNumber: 6, score: 0, stuckPoints: ["Reached maximum step limit"] }),
+			makeTaskScore({ iteration: 3, taskNumber: 6, score: 0, stuckPoints: ["Reached maximum step limit"] }),
+		];
+		// Only iters 0, 2, 3 are kept — 3 consecutive zeros
+		const stuck = detectStuckTasks(state);
+		assert.strictEqual(stuck.length, 1);
+		assert.strictEqual(stuck[0].consecutiveZeros, 3);
+	});
+
+	it("does not flag task with zeros but no step-limit stuck", () => {
+		const state = createState();
+		state.currentBranch = "main";
+		state.iterations = [
+			makeIter({ iteration: 0, kept: true }),
+			makeIter({ iteration: 1, kept: true }),
+			makeIter({ iteration: 2, kept: true }),
+		];
+		state.taskScores = [
+			makeTaskScore({ iteration: 0, taskNumber: 6, score: 0, stuckPoints: ["Element not found"] }),
+			makeTaskScore({ iteration: 1, taskNumber: 6, score: 0, stuckPoints: ["Could not click button"] }),
+			makeTaskScore({ iteration: 2, taskNumber: 6, score: 0, stuckPoints: ["Error in app"] }),
+		];
+		const stuck = detectStuckTasks(state);
+		assert.strictEqual(stuck.length, 0);
+	});
+});
+
+describe("taskScoreStats", () => {
+	it("computes mean, stdev, min, max", () => {
+		const state = createState();
+		state.currentBranch = null;
+		state.taskScores = [
+			makeTaskScore({ taskNumber: 1, score: 25 }),
+			makeTaskScore({ taskNumber: 1, score: 50, iteration: 1 }),
+			makeTaskScore({ taskNumber: 1, score: 62, iteration: 2 }),
+			makeTaskScore({ taskNumber: 1, score: 55, iteration: 3 }),
+		];
+		const stats = taskScoreStats(state, 1);
+		assert.ok(stats !== null);
+		assert.strictEqual(stats!.min, 25);
+		assert.strictEqual(stats!.max, 62);
+		assert.strictEqual(stats!.count, 4);
+		// mean = 48, stdev ≈ 13.7
+		assert.strictEqual(stats!.mean, 48);
+		assert.ok(stats!.stdev > 13 && stats!.stdev < 14);
+	});
+
+	it("returns null with fewer than 2 data points", () => {
+		const state = createState();
+		state.currentBranch = null;
+		state.taskScores = [makeTaskScore({ taskNumber: 1, score: 50 })];
+		assert.strictEqual(taskScoreStats(state, 1), null);
+	});
+
+	it("returns null for nonexistent task", () => {
+		const state = createState();
+		state.currentBranch = null;
+		state.taskScores = [makeTaskScore({ taskNumber: 1, score: 50 })];
+		assert.strictEqual(taskScoreStats(state, 99), null);
+	});
+});
+
+describe("compositeScoreStats", () => {
+	it("computes composite stdev across iterations", () => {
+		const state = createState();
+		state.currentBranch = null;
+		state.iterations = [
+			makeIter({ iteration: 0, composite: 50 }),
+			makeIter({ iteration: 1, composite: 60 }),
+			makeIter({ iteration: 2, composite: 55 }),
+		];
+		const stats = compositeScoreStats(state);
+		assert.ok(stats !== null);
+		assert.strictEqual(stats!.count, 3);
+		assert.strictEqual(stats!.mean, 55);
+		assert.ok(stats!.stdev > 0);
+	});
+
+	it("returns null with fewer than 3 iterations", () => {
+		const state = createState();
+		state.currentBranch = null;
+		state.iterations = [
+			makeIter({ iteration: 0, composite: 50 }),
+			makeIter({ iteration: 1, composite: 60 }),
+		];
+		assert.strictEqual(compositeScoreStats(state), null);
+	});
+});
+
+describe("blockedTasks persistence", () => {
+	it("persists and reconstructs blockedTasks via config", () => {
+		const state = createState();
+		state.active = true;
+		state.mode = "quick";
+		state.experimentName = "test";
+		state.blockedTasks = [6, 8];
+		writeConfig(tmpDir, state);
+
+		const restored = reconstructState(tmpDir);
+		assert.deepStrictEqual(restored.blockedTasks, [6, 8]);
+	});
+
+	it("defaults to empty array when not set", () => {
+		const state = createState();
+		state.active = true;
+		state.experimentName = "test";
+		writeConfig(tmpDir, state);
+
+		const restored = reconstructState(tmpDir);
+		assert.deepStrictEqual(restored.blockedTasks, []);
 	});
 });

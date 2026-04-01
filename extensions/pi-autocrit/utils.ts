@@ -216,6 +216,7 @@ export function buildEvaluateCommand(params: {
 	port?: number;
 	browserBackend?: string;
 	postEval?: boolean;
+	maxSteps?: number;
 }): string {
 	const { pythonDir, useUv } = params;
 	const evalScript = path.join(pythonDir, "evaluate.py");
@@ -257,6 +258,9 @@ export function buildEvaluateCommand(params: {
 	}
 	if (params.postEval) {
 		parts.push("--post-eval");
+	}
+	if (params.maxSteps !== undefined) {
+		parts.push("--max-steps", String(params.maxSteps));
 	}
 
 	return parts.join(" ");
@@ -320,25 +324,64 @@ export function buildReportCommand(params: {
 // Persona task number extraction (lightweight, no Python needed)
 // ---------------------------------------------------------------------------
 
+/** Lightweight task metadata parsed from persona.md headers. */
+export interface TaskMetadata {
+	number: number;
+	/** Per-task max_steps override (null = use global default). */
+	maxSteps: number | null;
+}
+
 /**
  * Parse persona.md (and optional requirements.md) to extract task numbers.
  * Looks for "#### Task N:" headers in the markdown.
  */
 export function parsePersonaTaskNumbers(cwd: string, requirementsPath?: string): number[] {
+	return parsePersonaTaskMetadata(cwd, requirementsPath).map((m) => m.number);
+}
+
+/**
+ * Parse persona.md to extract task numbers and per-task max_steps.
+ * Looks for "#### Task N:" headers and "- max_steps: N" fields.
+ */
+export function parsePersonaTaskMetadata(cwd: string, requirementsPath?: string): TaskMetadata[] {
 	const filePath = requirementsPath
 		? path.join(cwd, requirementsPath)
 		: path.join(cwd, "persona.md");
 
 	try {
 		const content = fs.readFileSync(filePath, "utf-8");
-		const taskNumbers: number[] = [];
-		// Match "#### Task N:" headers (with optional text after the number)
-		const pattern = /^#{1,4}\s+Task\s+(\d+)\s*:/gm;
-		let match;
-		while ((match = pattern.exec(content)) !== null) {
-			taskNumbers.push(parseInt(match[1], 10));
+		const tasks: TaskMetadata[] = [];
+		const lines = content.split("\n");
+
+		let currentTaskNumber: number | null = null;
+		let currentMaxSteps: number | null = null;
+		const taskHeaderPattern = /^#{1,4}\s+Task\s+(\d+)\s*:/;
+		const maxStepsPattern = /^-\s*max_steps:\s*(\d+)/;
+
+		for (const line of lines) {
+			const taskMatch = taskHeaderPattern.exec(line);
+			if (taskMatch) {
+				// Save previous task if any
+				if (currentTaskNumber !== null) {
+					tasks.push({ number: currentTaskNumber, maxSteps: currentMaxSteps });
+				}
+				currentTaskNumber = parseInt(taskMatch[1], 10);
+				currentMaxSteps = null;
+				continue;
+			}
+			if (currentTaskNumber !== null) {
+				const stepsMatch = maxStepsPattern.exec(line);
+				if (stepsMatch) {
+					currentMaxSteps = parseInt(stepsMatch[1], 10);
+				}
+			}
 		}
-		return taskNumbers;
+		// Don't forget the last task
+		if (currentTaskNumber !== null) {
+			tasks.push({ number: currentTaskNumber, maxSteps: currentMaxSteps });
+		}
+
+		return tasks;
 	} catch {
 		return [];
 	}

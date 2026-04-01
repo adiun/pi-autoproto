@@ -139,6 +139,39 @@ describe("recomputeScores", () => {
 		// 50*0.60 + 100*0.25 + 100*0.15 = 30 + 25 + 15 = 70.0
 		assert.strictEqual(results.composite_score, 70);
 	});
+
+	it("excludes blocked tasks from scoring", () => {
+		const results = makeResults([
+			makeTask({ number: 1, tier: "P0", score: 90 }),
+			makeTask({ number: 2, tier: "P0", score: 0 }),  // blocked
+			makeTask({ number: 3, tier: "P1", score: 60 }),
+			makeTask({ number: 4, tier: "P2", score: 40 }),
+		]);
+
+		recomputeScores(results, [2]);
+
+		// With task 2 blocked: P0 avg = 90 (only task 1), P1 = 60, P2 = 40
+		// 90*0.60 + 60*0.25 + 40*0.15 = 54 + 15 + 6 = 75.0
+		// No P0 zero cap since task 2 is excluded
+		assert.strictEqual(results.composite_score, 75);
+		assert.strictEqual(results.p0_score, 90);
+	});
+
+	it("blocked tasks: P0 zero cap only considers non-blocked tasks", () => {
+		const results = makeResults([
+			makeTask({ number: 1, tier: "P0", score: 0 }),  // blocked
+			makeTask({ number: 2, tier: "P0", score: 80 }),  // not blocked
+			makeTask({ number: 3, tier: "P1", score: 100 }),
+			makeTask({ number: 4, tier: "P2", score: 100 }),
+		]);
+
+		recomputeScores(results, [1]);
+
+		// Task 1 excluded. P0 avg = 80, P1 = 100, P2 = 100
+		// 80*0.60 + 100*0.25 + 100*0.15 = 48 + 25 + 15 = 88.0
+		// No zero cap since the only P0 zero (task 1) is blocked
+		assert.strictEqual(results.composite_score, 88);
+	});
 });
 
 // ── mergeTaskResult ─────────────────────────────────────────────────────

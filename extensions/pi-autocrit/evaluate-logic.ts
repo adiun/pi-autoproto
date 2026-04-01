@@ -88,10 +88,13 @@ export function mergeTaskResult(
 /**
  * Recompute composite scores from individual task results.
  * Follows the persona scoring formula: composite = p0*0.60 + p1*0.25 + p2*0.15
+ * Tasks in blockedTasks are excluded from scoring.
  */
-export function recomputeScores(combined: EvalResultsJson): void {
+export function recomputeScores(combined: EvalResultsJson, blockedTasks?: number[]): void {
+	const blocked = new Set(blockedTasks ?? []);
 	const tiers: Record<string, number[]> = { P0: [], P1: [], P2: [] };
 	for (const task of combined.tasks) {
+		if (blocked.has(task.number)) continue;
 		const tier = task.tier?.toUpperCase() ?? "P2";
 		if (tiers[tier]) {
 			tiers[tier].push(task.score);

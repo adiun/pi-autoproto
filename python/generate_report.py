@@ -16,14 +16,47 @@ from persona_parser import parse_hypotheses
 
 
 def _load_prototype_results(experiment_dir: str) -> list[dict]:
-    """Load eval_results.json from each proto-* subdirectory."""
+    """Load eval_results.json from each proto-* subdirectory.
+
+    Prefers best/<branch>/eval_results.json over the latest iteration's
+    results, since the latest may have been lost during iteration reverts.
+    Falls back to proto-*/eval_results.json if best/ doesn't exist.
+    """
     prototypes = []
     for entry in sorted(os.listdir(experiment_dir)):
         if not entry.startswith("proto-"):
             continue
-        results_path = os.path.join(experiment_dir, entry, "eval_results.json")
-        if not os.path.exists(results_path):
+
+        # Prefer archived best results (#5: prevent lost eval results)
+        # best/ uses underscored branch slug: autocrit_<exp>_<proto>
+        # but also try the raw proto-* name
+        best_candidates = [
+            os.path.join(experiment_dir, "best", entry, "eval_results.json"),
+        ]
+        # Also search for slugified variants (/ replaced with _)
+        best_dir = os.path.join(experiment_dir, "best")
+        if os.path.isdir(best_dir):
+            for bentry in os.listdir(best_dir):
+                if entry.replace("-", "_") in bentry or entry in bentry:
+                    best_candidates.append(
+                        os.path.join(best_dir, bentry, "eval_results.json")
+                    )
+
+        results_path = None
+        for candidate in best_candidates:
+            if os.path.exists(candidate):
+                results_path = candidate
+                break
+
+        # Fall back to proto-*/eval_results.json
+        if results_path is None:
+            fallback = os.path.join(experiment_dir, entry, "eval_results.json")
+            if os.path.exists(fallback):
+                results_path = fallback
+
+        if results_path is None:
             continue
+
         with open(results_path) as f:
             data = json.load(f)
         # Read approach.md if it exists in the prototype dir
@@ -37,6 +70,7 @@ def _load_prototype_results(experiment_dir: str) -> list[dict]:
                         break
         data["_proto_id"] = entry
         data["_proto_name"] = approach_name
+        data["_results_source"] = results_path
         prototypes.append(data)
     return prototypes
 

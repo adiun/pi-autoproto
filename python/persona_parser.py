@@ -14,6 +14,7 @@ class PersonaTask:
     success_criteria: list[str]
     evaluation_method: str  # "task_completion", "output_review"
     correct_answer: str | None = None
+    max_steps: int | None = None  # Per-task step budget override (None = use global default)
 
 
 @dataclass
@@ -214,6 +215,9 @@ def _parse_single_task(tblock: str, tier: str) -> PersonaTask | None:
             else:
                 in_criteria = False
 
+    max_steps_str = get_field("max_steps")
+    max_steps = int(max_steps_str) if max_steps_str and max_steps_str.isdigit() else None
+
     return PersonaTask(
         number=task_num,
         name=task_name,
@@ -223,6 +227,7 @@ def _parse_single_task(tblock: str, tier: str) -> PersonaTask | None:
         success_criteria=criteria,
         evaluation_method=get_field("evaluation_method") or "task_completion",
         correct_answer=get_field("correct_answer"),
+        max_steps=max_steps,
     )
 
 

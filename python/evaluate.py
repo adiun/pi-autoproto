@@ -899,6 +899,43 @@ def generate_variants(persona: Persona, n: int) -> list[PersonaVariant]:
 # Convergence analysis
 # ---------------------------------------------------------------------------
 
+def _write_variant_results_incremental(
+    variant_results_list: list[dict],
+    persona: Persona,
+    output_dir: str,
+) -> None:
+    """Write partial variant results after each variant completes.
+
+    This ensures that if the process crashes mid-evaluation, results from
+    completed variants are preserved (#4: crash resilience).
+    """
+    if not variant_results_list:
+        return
+
+    # Compute convergence on whatever variants we have so far
+    convergence = analyze_convergence(variant_results_list, persona) if len(variant_results_list) >= 2 else {}
+
+    all_composites = [vr["composite_score"] for vr in variant_results_list]
+    aggregate_composite = statistics.median(all_composites)
+
+    representative = min(
+        variant_results_list,
+        key=lambda vr: abs(vr["composite_score"] - aggregate_composite)
+    )
+
+    output = {
+        "composite_score": round(aggregate_composite, 1),
+        "p0_score": representative["p0_score"],
+        "p1_score": representative["p1_score"],
+        "p2_score": representative["p2_score"],
+        "tasks": representative["tasks"],
+        "variants": variant_results_list,
+        "convergence": convergence,
+    }
+    with open(os.path.join(output_dir, "eval_results.json"), "w") as f:
+        json.dump(output, f, indent=2)
+
+
 def analyze_convergence(
     variant_results: list[dict],
     persona: Persona,
@@ -1359,6 +1396,8 @@ def main() -> None:
                     else:
                         print(f"{prefix}Evaluating Task {task.number}: {task.name}...", end="", flush=True)
 
+                # Per-task step budget: use task-specific max_steps if defined, else global
+                task_max_steps = task.max_steps if task.max_steps is not None else args.max_steps
                 try:
                     result = evaluate_task(
                         task, eval_persona, port, args.verbose,
@@ -1368,7 +1407,7 @@ def main() -> None:
                         max_snapshot_chars=args.max_snapshot,
                         screenshot_dir=screenshot_dir if run_idx == 0 else None,
                         vision=args.vision,
-                        max_steps=args.max_steps,
+                        max_steps=task_max_steps,
                         skip_feedback=args.skip_feedback,
                         stats=args.stats,
                     )
@@ -1460,6 +1499,11 @@ def main() -> None:
                 if not args.quiet:
                     print(f"  -> {variant.label}: composite={scores['composite']}")
                     print()
+
+                # Write intermediate results after each variant (#4: crash resilience)
+                _write_variant_results_incremental(
+                    variant_results_list, persona, args.output_dir
+                )
 
             # Close browser
             _browser.close()

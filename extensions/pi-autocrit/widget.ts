@@ -5,7 +5,7 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { AutocritState, IterationResult } from "./state.js";
-import { currentBranchIterations, bestIteration } from "./state.js";
+import { currentBranchIterations, bestIteration, taskScoreStats } from "./state.js";
 import { formatDuration, getElapsedMs, sparkline } from "./utils.js";
 
 // ---------------------------------------------------------------------------
@@ -341,10 +341,20 @@ export function renderFullscreenWidget(
 		const latestColor: Parameters<typeof theme.fg>[0] = latestEntry.completed
 			? "success" : latestEntry.timedOut ? "warning" : "error";
 
+		// Show variance stats if available
+		const stats = taskScoreStats(state, taskNum);
+		const varianceStr = stats
+			? theme.fg("dim", ` (range: ${stats.min}–${stats.max}, stdev ${stats.stdev}${stats.stdev > 15 ? " ← noisy" : ""})`)
+			: "";
+
+		// Show blocked indicator
+		const isBlocked = state.blockedTasks.includes(taskNum);
+		const blockedStr = isBlocked ? theme.fg("warning", " [BLOCKED]") : "";
+
 		lines.push(
 			truncateToWidth(
 				`  ${theme.fg("accent", `Task ${taskNum}`)} ${theme.fg("dim", `[${task.tier}]`)} ` +
-				`${theme.fg("text", `"${task.name}"`)} — ${theme.fg(latestColor, latestStatus)}`,
+				`${theme.fg("text", `"${task.name}"`)} — ${theme.fg(latestColor, latestStatus)}${blockedStr}${varianceStr}`,
 				width,
 			),
 		);

@@ -44,6 +44,7 @@ Alex is a 28-year-old server at a mid-range Italian restaurant in Austin, TX. Wo
 #### Task 2: Uneven split with drinks
 
 - type: computation
+- max_steps: 15
 - goal: The bill is $120.00 split 4 ways, but 2 people had cocktails ($15 each) and 2 didn't. Everyone agrees on 20% tip. Figure out a fair split where the drinkers pay more. What does each person owe?
 - success_criteria:
   - The persona found a way to handle the uneven split (not just $120/4)

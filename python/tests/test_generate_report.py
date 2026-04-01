@@ -299,6 +299,39 @@ def test_load_prototype_results(tmp_experiment_dir):
     assert by_id["proto-b"]["composite_score"] == 72.0
 
 
+def test_load_prototype_results_prefers_best_dir(tmp_path):
+    """When best/<proto>/eval_results.json exists, it should be preferred over proto-*/eval_results.json."""
+    exp = tmp_path / "exp"
+    exp.mkdir()
+
+    # Create proto-a with a lower-score result
+    proto = exp / "proto-a"
+    proto.mkdir()
+    (proto / "eval_results.json").write_text(json.dumps({
+        "composite_score": 50.0,
+        "p0_score": 60,
+        "p1_score": 40,
+        "p2_score": 30,
+        "tasks": [],
+    }))
+
+    # Create best/proto-a with a higher-score result
+    best = exp / "best" / "proto-a"
+    best.mkdir(parents=True)
+    (best / "eval_results.json").write_text(json.dumps({
+        "composite_score": 79.3,
+        "p0_score": 82,
+        "p1_score": 63.3,
+        "p2_score": 95,
+        "tasks": [],
+    }))
+
+    results = _load_prototype_results(str(exp))
+    assert len(results) == 1
+    assert results[0]["composite_score"] == 79.3
+    assert "best" in results[0]["_results_source"]
+
+
 def test_load_prototype_results_reads_approach_md(tmp_experiment_dir):
     """When approach.md exists, _proto_name comes from its header."""
     approach_path = os.path.join(tmp_experiment_dir, "proto-a", "approach.md")

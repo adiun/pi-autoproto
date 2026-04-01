@@ -18,7 +18,7 @@ import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AutocritRuntime } from "../state.js";
-import { buildEvaluateCommand, getPythonDir, parsePersonaTaskNumbers, formatDuration, getElapsedMs } from "../utils.js";
+import { buildEvaluateCommand, getPythonDir, parsePersonaTaskMetadata, formatDuration, getElapsedMs } from "../utils.js";
 import {
 	readEvalResults, mergeTaskResult, recomputeScores, computeTaskTimeoutMs,
 	DEFAULT_MAX_STEPS, QUICK_MAX_STEPS, MAX_TASK_TIMEOUT_MS, TIMEOUT_PER_STEP_MS, TASK_OVERHEAD_MS,
@@ -263,11 +263,12 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		const state = getRuntime().state;
 
 		// If task filter specified, run only that task; otherwise parse all from persona.md
-		const taskNumbers = params.task
-			? [params.task as number]
-			: parsePersonaTaskNumbers(runCtx.ctx.cwd);
+		const allMeta = parsePersonaTaskMetadata(runCtx.ctx.cwd);
+		const taskMetas = params.task
+			? allMeta.filter((m) => m.number === params.task)
+			: allMeta;
 
-		if (taskNumbers.length === 0) {
+		if (taskMetas.length === 0) {
 			return {
 				content: [{ type: "text", text: "❌ No tasks found in persona.md. Check the file format." }],
 				details: {},
@@ -288,14 +289,13 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			tasks: [],
 		};
 
-		const totalTasks = taskNumbers.length;
+		const totalTasks = taskMetas.length;
 		let completedCount = 0;
 		let timedOutCount = 0;
 
-		// Derive max_steps and runs from mode (no per-call overrides)
-		const maxSteps = runCtx.mode === "quick" ? QUICK_MAX_STEPS : DEFAULT_MAX_STEPS;
+		// Derive base max_steps and runs from mode
+		const baseMaxSteps = runCtx.mode === "quick" ? QUICK_MAX_STEPS : DEFAULT_MAX_STEPS;
 		const runsForTask = runCtx.mode === "quick" ? 1 : 2;
-		const taskTimeoutMs = computeTaskTimeoutMs(maxSteps, runsForTask);
 
 		// Get or create cached dev server
 		runCtx.onUpdate?.({
@@ -306,7 +306,11 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		});
 		const devServer = await getOrCreateDevServer(runCtx.ctx.cwd);
 
-		for (const taskNum of taskNumbers) {
+		for (const taskMeta of taskMetas) {
+			const taskNum = taskMeta.number;
+			// Per-task step budget: use task-specific max_steps if defined, else base
+			const maxSteps = taskMeta.maxSteps ?? baseMaxSteps;
+			const taskTimeoutMs = computeTaskTimeoutMs(maxSteps, runsForTask);
 			if (runCtx.signal?.aborted) break;
 
 			completedCount++;
@@ -332,6 +336,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 				personaCmd: state.personaCmd!,
 				port: devServer.port,
 				browserBackend: state.browserBackend,
+				maxSteps: maxSteps !== baseMaxSteps ? maxSteps : undefined,
 			});
 
 			let result = await pi.exec("bash", ["-c", command], {
@@ -399,8 +404,8 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 				// ignore
 			}
 
-			// Write intermediate combined results after each task
-			recomputeScores(combined);
+			// Recompute after each task (exclude blocked tasks)
+			recomputeScores(combined, state.blockedTasks);
 			fs.writeFileSync(runCtx.evalResultsPath, JSON.stringify(combined, null, 2));
 
 			// Stream progress with per-task score
@@ -418,8 +423,8 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 
 		// Note: dev server is NOT cleaned up here — it's cached in runtime for reuse
 
-		// Final score recompute
-		recomputeScores(combined);
+		// Final score recompute (exclude blocked tasks)
+		recomputeScores(combined, state.blockedTasks);
 		fs.writeFileSync(runCtx.evalResultsPath, JSON.stringify(combined, null, 2));
 
 		// Run post-eval (exploratory tasks + session wishlist) in full mode
@@ -497,8 +502,8 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 		});
 
 		// Estimate timeout: tasks × per-task timeout × variant count
-		const taskNumbers = parsePersonaTaskNumbers(runCtx.ctx.cwd);
-		const numTasks = taskNumbers.length || 7;
+		const taskMetas = parsePersonaTaskMetadata(runCtx.ctx.cwd);
+		const numTasks = taskMetas.length || 7;
 		const variantCount = (params.variant_count as number) || 4;
 		const timeoutMs = TIMEOUT_BASE_MS + (numTasks * computeTaskTimeoutMs(DEFAULT_MAX_STEPS, variantCount));
 
@@ -514,9 +519,19 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 			timeout: timeoutMs,
 		});
 
-		const evalResults = readEvalResults(runCtx.evalResultsPath);
+		let evalResults = readEvalResults(runCtx.evalResultsPath);
 
 		if (evalResults) {
+			// Check for partial variant completion
+			const variants = (evalResults as Record<string, unknown>).variants as unknown[] | undefined;
+			const requestedVariants = (params.variant_count as number) || 4;
+			if (result.code !== 0 && variants && variants.length < requestedVariants) {
+				// Partial completion — report what we have
+				const resp = buildResponse(evalResults, runCtx.evalResultsPath, requestedVariants - variants.length);
+				const partial = `\n\n⚠️ Variants evaluation partially completed: ${variants.length}/${requestedVariants} variants finished. Results from completed variants are available.`;
+				const text = resp.content[0]?.type === "text" ? resp.content[0].text + partial : partial;
+				return { content: [{ type: "text", text }], details: resp.details };
+			}
 			return buildResponse(evalResults, runCtx.evalResultsPath, 0);
 		}
 

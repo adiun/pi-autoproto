@@ -9,6 +9,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import {
 	buildEvaluateCommand, buildReportCommand, parsePersonaTaskNumbers,
+	parsePersonaTaskMetadata,
 	formatScoreLine, appendResultsTsv, appendIterationHistory,
 	formatDuration, getElapsedMs, sparkline,
 } from "../extensions/pi-autocrit/utils.js";
@@ -302,6 +303,73 @@ describe("appendIterationHistory", () => {
 		const parsed1 = JSON.parse(lines[1]);
 		assert.strictEqual(parsed1.iteration, 1);
 		assert.strictEqual(parsed1.description, "fix nav");
+	});
+});
+
+// ── parsePersonaTaskMetadata ────────────────────────────────────────────
+
+describe("parsePersonaTaskMetadata", () => {
+	it("extracts task numbers and max_steps", () => {
+		const personaPath = path.join(tmpDir, "persona.md");
+		fs.writeFileSync(personaPath, [
+			"#### Task 1: Basic calc",
+			"- type: computation",
+			"- max_steps: 15",
+			"- goal: do something",
+			"#### Task 2: Simple nav",
+			"- type: navigation",
+			"- goal: navigate somewhere",
+			"#### Task 3: Complex task",
+			"- type: computation",
+			"- max_steps: 20",
+			"- goal: do complex thing",
+		].join("\n"));
+
+		const metas = parsePersonaTaskMetadata(tmpDir);
+		assert.strictEqual(metas.length, 3);
+		assert.strictEqual(metas[0].number, 1);
+		assert.strictEqual(metas[0].maxSteps, 15);
+		assert.strictEqual(metas[1].number, 2);
+		assert.strictEqual(metas[1].maxSteps, null);
+		assert.strictEqual(metas[2].number, 3);
+		assert.strictEqual(metas[2].maxSteps, 20);
+	});
+
+	it("returns empty array for missing file", () => {
+		const metas = parsePersonaTaskMetadata("/nonexistent/path");
+		assert.deepStrictEqual(metas, []);
+	});
+
+	it("returns null maxSteps when not specified", () => {
+		const personaPath = path.join(tmpDir, "persona.md");
+		fs.writeFileSync(personaPath, "#### Task 1: Simple\n- goal: test\n");
+
+		const metas = parsePersonaTaskMetadata(tmpDir);
+		assert.strictEqual(metas.length, 1);
+		assert.strictEqual(metas[0].maxSteps, null);
+	});
+});
+
+// ── buildEvaluateCommand maxSteps ───────────────────────────────────────
+
+describe("buildEvaluateCommand maxSteps", () => {
+	const base = {
+		pythonDir: "/opt/python",
+		useUv: true,
+		iteration: 0,
+		outputDir: "results/iter_0",
+		screenshotDir: "screenshots",
+		personaCmd: "claude -p",
+	};
+
+	it("includes --max-steps when specified", () => {
+		const cmd = buildEvaluateCommand({ ...base, maxSteps: 20 });
+		assert.ok(cmd.includes("--max-steps 20"), `Expected --max-steps 20 in: ${cmd}`);
+	});
+
+	it("omits --max-steps when not specified", () => {
+		const cmd = buildEvaluateCommand(base);
+		assert.ok(!cmd.includes("--max-steps"), `Should not have --max-steps in: ${cmd}`);
 	});
 });
 

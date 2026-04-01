@@ -27,6 +27,8 @@ Dashboard: `ctrl+x` to expand/collapse. `/autocrit` for status.
 - **One evaluation per iteration.** Call `run_evaluation` once, then `log_iteration`. Do not re-run to "confirm" — trust the score.
 - **Always run all tasks.** Never filter by tier. Tier-filtered evaluations produce misleading composite scores (unrun tiers show as 0).
 - **Task filter is for debugging only.** Only use the `task` parameter after a full evaluation has identified a specific stuck task you need to investigate.
+- **Stuck tasks are surfaced automatically.** If `log_iteration` flags a task as structurally untestable (scored 0 in 3+ consecutive kept iterations with step-limit stuck points), investigate with the `task` parameter and a higher `max_steps`. If the task passes with more steps, add `max_steps` to the task definition in persona.md. If it still fails, the task may need to be redesigned or marked as blocked.
+- **Blocked tasks are excluded from scoring.** Tasks marked as blocked in the autocrit state are still evaluated for feedback but excluded from the composite score. This prevents a single untestable task from capping the composite at 40.
 - **Bundle independent fixes.** If multiple failing tasks have independent fixes (e.g., add a nav item AND move a button), address them in one iteration. The keep/discard protocol handles failure — revert the whole bundle.
 - **Timeouts are not failures.** If a task times out with no feedback, it's an infrastructure issue (LLM latency, agent-browser). Do not re-run. Log the iteration and move on.
 - **Faster iteration with cheaper models.** For faster evaluation cycles, consider using a cheaper/faster model for the persona agent (e.g., `--cmd "claude -p --model haiku"`). The persona agent navigates and clicks — it doesn't need the most capable model.
@@ -113,6 +115,14 @@ A useful complexity spectrum:
 
 Aim for at least 1 P0 and 1 P1 task at Level 4-5.
 
+7. **Use per-task step budgets for complex tasks.** Tasks that require multi-step data entry (typing ingredients, filling forms) before evaluation should specify `max_steps: 15` or higher. The default quick-mode budget (10 steps) is appropriate for tasks that start from an already-populated state or require minimal input. Without this, the step limit forces all prototypes toward the simplest possible input method (e.g., a single textarea), which may not be the best UX.
+   ```markdown
+   #### Task 1: Tuesday night chicken search
+   - type: computation
+   - max_steps: 15
+   - goal: Enter 6 ingredients, apply constraints, pick a recipe...
+   ```
+
 ### 2. Verify Inputs
 
 Check for these files:
@@ -137,6 +147,10 @@ Read `persona.md`, `requirements.md`, and `hypotheses.md` carefully.
 **Brainstorm 3 genuinely different UX approaches** — not variations of the same idea. Examples:
 - A dashboard with filters vs. a conversational flow vs. a visual workspace
 - A wizard/step-by-step flow vs. a single-page calculator vs. a card-based explorer
+
+**Differentiate on results, not input.** Since the evaluation uses a synthetic agent, complex input patterns (autocomplete, chip grids, multi-step wizards) may be penalized by step limits even when they're good UX for humans. Differentiate prototypes on results presentation, information architecture, filtering UX, and decision support — not on data entry method. All prototypes can share the same efficient input method.
+
+**If the agent can't use your prototype's distinctive pattern**, that's a finding — don't replace it with the same thing that works for the agent. Note it as a limitation in your iteration plan and focus on the parts of the approach that *can* be tested.
 
 For each approach:
 1. **Name**: 2-3 words
@@ -221,6 +235,7 @@ Repeat until a stopping condition:
 - Plateau: composite hasn't improved by >3 points in last 3 kept iterations
 - 10 iterations completed
 - All P0 tasks pass with composite > 85
+- Per-prototype iteration cap reached (full mode, default 5). In full mode, aim for roughly equal iteration budgets per prototype. If you hit the cap, move on — even if the prototype is still improving. A fair comparison requires comparable effort on each approach.
 
 ### Final Evaluation
 
@@ -254,7 +269,7 @@ Present to the user: comparative report, recommendations, bias flags.
 - **Each iteration = one coherent change** with a clear thesis — but bundle independent fixes for different tasks into one iteration.
 - **P0 first.** Never work on P1/P2 while P0 tasks fail.
 - **Run `vp check src/` after every edit.** Always target `src/` to avoid linting `node_modules/`.
-- **Score variance is real.** Single-run scores can swing 30+ points on the same code. Don't trust deltas under 15 points from a single quick run. If a task shows a surprising score change, re-run it before making a keep/discard decision.
+- **Score variance is real.** Single-run scores can swing 30+ points on the same code. Don't trust deltas under 15 points from a single quick run. When `log_iteration` flags a score change as "likely noise" (within historical stdev), weight the qualitative feedback more heavily than the number. If the persona feedback suggests improvement but the score dropped within variance, lean toward keeping.
 - **Timeouts ≠ failures.** If a task times out but passed in a previous iteration with unchanged code, it's an infrastructure issue (LLM latency, browser backend). Do not re-run evaluations because of timeouts. Log the iteration and move on.
 - **log_iteration auto-reads scores.** You don't need to manually compute composite/P0/P1/P2 — just pass iteration number, description, and kept. Scores are read from eval_results.json.
 - **Wishlist items are desires, not requirements.** The `session_wishlist` is grounded in the persona's experience, but still: diagnose root causes, don't implement literally.

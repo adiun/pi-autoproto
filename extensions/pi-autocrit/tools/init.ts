@@ -39,6 +39,11 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 					description: "Browser backend for evaluation. Default: agent-browser. Use playwright-cli for text/snapshot mode.",
 				}),
 			),
+			max_iterations_per_prototype: Type.Optional(
+				Type.Number({
+					description: "Max iterations per prototype in full mode (default: 5). Produces warnings when approaching/exceeding the cap.",
+				}),
+			),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -103,6 +108,9 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 			state.experimentName = params.experiment_name;
 			state.personaCmd = params.persona_cmd;
 			state.browserBackend = browserBackendName as import("../state.js").BrowserBackendName;
+			if (params.max_iterations_per_prototype !== undefined) {
+				state.maxIterationsPerPrototype = params.max_iterations_per_prototype;
+			}
 
 			// Preserve existing startTime when resuming, else set now
 			if (existingState.active && existingState.startTime) {
@@ -111,9 +119,15 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 				state.startTime = Date.now();
 			}
 
-			// Reuse existing iterations from autocrit.jsonl
+			// Reuse existing iterations and task scores from autocrit.jsonl
 			if (existingState.active && existingState.iterations.length > 0) {
 				state.iterations = existingState.iterations;
+			}
+			if (existingState.active && existingState.taskScores.length > 0) {
+				state.taskScores = existingState.taskScores;
+			}
+			if (existingState.active && existingState.blockedTasks.length > 0) {
+				state.blockedTasks = existingState.blockedTasks;
 			}
 
 			// Create or reuse results directory

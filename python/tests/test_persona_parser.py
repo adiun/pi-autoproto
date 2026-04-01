@@ -123,6 +123,38 @@ class TestParseSingleTask:
         assert task is not None
         assert task.success_criteria == []
 
+    def test_max_steps_parsed(self):
+        block = (
+            "Task 1: Complex task\n"
+            "- type: computation\n"
+            "- max_steps: 20\n"
+            "- goal: Do something complex\n"
+        )
+        task = _parse_single_task(block, "P0")
+        assert task is not None
+        assert task.max_steps == 20
+
+    def test_max_steps_default_none(self):
+        block = (
+            "Task 2: Simple task\n"
+            "- type: navigation\n"
+            "- goal: Navigate somewhere\n"
+        )
+        task = _parse_single_task(block, "P1")
+        assert task is not None
+        assert task.max_steps is None
+
+    def test_max_steps_non_numeric_ignored(self):
+        block = (
+            "Task 3: Bad steps\n"
+            "- type: navigation\n"
+            "- max_steps: abc\n"
+            "- goal: Navigate\n"
+        )
+        task = _parse_single_task(block, "P0")
+        assert task is not None
+        assert task.max_steps is None
+
 
 # ---------------------------------------------------------------------------
 # compute_composite
@@ -400,6 +432,16 @@ class TestParse:
         persona = parse(path)
         assert len(persona.agent_instructions) > 0
         assert "Alex" in persona.agent_instructions
+
+    def test_max_steps_parsed_from_example(self):
+        path = os.path.join(EXAMPLES_DIR, "persona_example.md")
+        persona = parse(path)
+        # Task 2 has max_steps: 15 in the example
+        task2 = [t for t in persona.tasks if t.number == 2][0]
+        assert task2.max_steps == 15
+        # Task 1 does not have max_steps
+        task1 = [t for t in persona.tasks if t.number == 1][0]
+        assert task1.max_steps is None
 
 
 # ---------------------------------------------------------------------------
