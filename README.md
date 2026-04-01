@@ -14,26 +14,19 @@ A **'crit'** in design and software development is a collaborative session aimed
 
 The main value here is a structured, repeatable critique.
 
-## An important note
+## Quick start
 
-Autocrit is a tool for early-stage exploration and validation. It is not a replacement for the full product development lifecycle.
+```
+pi install https://github.com/adiun/pi-autocrit
+```
 
-A synthetic persona is not a real user. It's a behavioral sketch with a backstory, some tasks, and personality traits. It produces plausible interaction patterns, but it lacks actual prior experience, social context, emotional variability, and the ability to learn and adapt over time. In the future I'd love to set up a digital twin infra where the definition of the user improves over time. But that's not this right now! 
+Then in pi:
 
-What autocrit tells you is which design hypotheses survived contact with a simulated user. The appropriate response to its results is "this gives us confidence to invest deeper in approach A" or "this suggests we should test the feasibility-first model with real users." Not "ship it."
+```
+/skill:autocrit
+```
 
-Use it to:
-- Rapidly explore whether an idea has legs before committing engineering resources
-- Compare fundamentally different UX approaches against the same user definition
-- Surface behavioral friction points that are hard to spot by just looking at a UI
-- Generate structured hypotheses to bring into real user research
-
-Do not use it to:
-- Skip user research entirely
-- Make final product decisions based solely on synthetic feedback
-- Assume high scores mean the product is ready for real users
-
-To me, this is a new "inner loop" within a potentially new take on the SDLC. But it doesn't replace the entire SDLC. 
+The agent guides you through creating a persona, generating tasks, building a seed app, and starting the evaluation loop.
 
 ## Install
 
@@ -56,12 +49,11 @@ Then `/reload` in pi.
 
 ### Prerequisites
 
-1. [pi](https://pi.dev/)
+1. [pi](https://pi.dev/) with an LLM configured in pi
 2. A browser backend (one of):
    - [agent-browser](https://github.com/vercel-labs/agent-browser): `npm install -g agent-browser && agent-browser install` (default, vision mode)
    - [playwright-cli](https://github.com/microsoft/playwright-cli): `npm install -g @playwright/cli@latest` (text/snapshot mode). After installing, run `bash scripts/setup.sh` with `AUTOCRIT_BROWSER_BACKEND=playwright-cli` to auto-install chromium for the correct Playwright version. Alternatively, `init_autocrit` will auto-install chromium on first use.
 3. [uv](https://docs.astral.sh/uv/): `curl -LsSf https://astral.sh/uv/install.sh | sh`
-4. An API key for your preferred LLM provider (configured in pi)
 
 Run `bash scripts/setup.sh` to verify all dependencies.
 
@@ -117,18 +109,41 @@ The final comparative report shows:
 - Exploratory task findings and session wishlist per prototype
 - Score discrepancy warnings when iteration history diverges from stored results
 
+## An important note
+
+Autocrit is a tool for early-stage exploration and validation. It is not a replacement for the full product development lifecycle.
+
+A synthetic persona is not a real user. It's a behavioral sketch with a backstory, some tasks, and personality traits. It produces plausible interaction patterns, but it lacks actual prior experience, social context, emotional variability, and the ability to learn and adapt over time. In the future I'd love to set up a digital twin infra where the definition of the user improves over time. But that's not this right now! 
+
+What autocrit tells you is which design hypotheses survived contact with a simulated user. The appropriate response to its results is "this gives us confidence to invest deeper in approach A" or "this suggests we should test the feasibility-first model with real users." Not "ship it."
+
+Use it to:
+- Rapidly explore whether an idea has legs before committing engineering resources
+- Compare fundamentally different UX approaches against the same user definition
+- Surface behavioral friction points that are hard to spot by just looking at a UI
+- Generate structured hypotheses to bring into real user research
+
+Do not use it to:
+- Skip user research entirely
+- Make final product decisions based solely on synthetic feedback
+- Assume high scores mean the product is ready for real users
+
+To me, this is a new "inner loop" within a potentially new take on the SDLC. But it doesn't replace the entire SDLC. 
+
 ## How it works
 
 The package has two parts: an **extension** (tools, state, UI) and a **skill** (workflow knowledge). The extension provides domain-agnostic evaluation infrastructure. The skill encodes the UX evaluation workflow, persona creation methodology, and iteration discipline.
 
+Prototype apps are built with [Vite+](https://github.com/nicepkg/vite-plus) (`vite-plus`), added as a per-project devDependency. The evaluation tools start a Vite dev server automatically — HMR means code changes are picked up without restarting between iterations.
+
 ### Extension tools
 
-| Tool              | What it does                                                                                   |
-| ----------------- | ---------------------------------------------------------------------------------------------- |
-| `init_autocrit`   | Validates dependencies, sets mode (full/quick), configures experiment                          |
-| `run_evaluation`  | Runs the persona agent against the app, returns structured scores and feedback                 |
-| `log_iteration`   | Records results, manages history, archives best results, detects plateaus/stuck tasks/variance |
-| `generate_report` | Produces comparative synthesis across prototypes (full mode)                                   |
+| Tool | What it does |
+|------|-------------|
+| `init_autocrit` | Validates dependencies, sets mode (full/quick), configures experiment |
+| `run_evaluation` | Runs the persona agent against the app, returns structured scores and feedback |
+| `log_iteration` | Records results, manages history, archives best results, detects plateaus/stuck tasks/variance |
+| `generate_report` | Produces comparative synthesis across prototypes (full mode) |
 
 ### Persona-driven task generation
 
@@ -181,7 +196,18 @@ composite = (mean(P0 scores) * 0.60) + (mean(P1 scores) * 0.25) + (mean(P2 score
 
 If any P0 (core functionality) task scores 0, the composite is capped at 40, regardless of other scores. Exploratory task scores are reported separately and do not affect this composite. Tasks marked as blocked (structurally untestable) are excluded from scoring entirely.
 
-In full mode, four behavioral variants of the same persona (e.g. Rushed, Careful, Skeptical, Confident) evaluate each prototype independently. Where 3 of 4 agree, that's a strong signal. Where they diverge, that's also useful info: it means the app's quality depends on user mood or approach. Verbatim feedback from each variant is preserved and attributed, so you can trace exactly which persona said what. If the variant evaluation crashes partway through, completed variant results are preserved — partial data is better than no data.
+### Persona variants
+
+Single-run scores are noisy — the same code can score 50 one run and 80 the next. For the final evaluation of each prototype, the system auto-generates four behavioral variants of the persona: the same person in different moods or situations. If your persona is "Marco, tired home cook on a Tuesday night," the variants might be:
+
+- **Rushed Marco** — just walked in, kid is hungry, needs an answer NOW
+- **Sunday Marco** — relaxed, willing to browse and explore
+- **Skeptical Marco** — doesn't trust the app, double-checks every result
+- **Exhausted Marco** — after a double shift, zero patience for anything confusing
+
+Each variant evaluates the app independently. Where 3 of 4 agree, that's a strong signal — the finding holds regardless of the user's mood. Where they disagree, that's also useful: it means the app's quality depends on user approach, which is itself a design insight. Verbatim feedback from each variant is preserved and attributed, so you can trace exactly which persona said what.
+
+Variant evaluation is the most time-intensive step (~60–120 min for 8 tasks × 4 variants) but produces the highest-confidence scores. If a variant evaluation crashes partway through, completed variant results are preserved — partial data is better than no data.
 
 ### Task design
 
@@ -219,15 +245,15 @@ All state is stored in an append-only `autocrit.jsonl` file. Each entry is a con
 
 In full mode, `generate_report` produces a structured comparison across prototypes. The report includes:
 
-| Section                   | What it shows                                                                                                        |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **Prototype Comparison**  | Side-by-side scores (composite, P0/P1/P2, exploratory) with peak scores from iteration history                       |
-| **Score Discrepancies**   | Warnings when eval_results.json scores diverge from actual best scores in the iteration log                          |
-| **Verbatim Feedback**     | Per-task feedback from each prototype, with fallback to notes and stuck points                                       |
-| **Exploratory Tasks**     | Ad-hoc tasks the persona invented, their scores, and feedback                                                        |
-| **Session Wishlist**      | Cumulative persona reflections: wishes, surprises, and "would I use this?"                                           |
+| Section | What it shows |
+|---------|--------------|
+| **Prototype Comparison** | Side-by-side scores (composite, P0/P1/P2, exploratory) with peak scores from iteration history |
+| **Score Discrepancies** | Warnings when eval_results.json scores diverge from actual best scores in the iteration log |
+| **Verbatim Feedback** | Per-task feedback from each prototype, with fallback to notes and stuck points |
+| **Exploratory Tasks** | Ad-hoc tasks the persona invented, their scores, and feedback |
+| **Session Wishlist** | Cumulative persona reflections: wishes, surprises, and "would I use this?" |
 | **Why Others Didn't Win** | Task-level analysis of where each losing prototype fell short — failed tasks, unique stuck points, negative feedback |
-| **Recommendations**       | Strongest prototype (using best available score), bias flags for validation                                          |
+| **Recommendations** | Strongest prototype (using best available score), bias flags for validation |
 
 When persona variants are used, the report also includes strongest signals, interesting disagreements, and bias detection.
 
@@ -280,12 +306,12 @@ Autocrit uses LLM calls in two places: the coding agent (pi) builds and modifies
 
 ### Rough estimates
 
-| Configuration                                             | Token cost | Wall-clock time |
-| --------------------------------------------------------- | ---------- | --------------- |
-| Quick mode, 8 tasks                                       | ~$2–5      | 10–20 min       |
-| Full mode, 8 tasks                                        | ~$5–10     | 20–40 min       |
-| Variant evaluation, 8 tasks × 4 variants                  | ~$15–25    | 60–120 min      |
-| Full session (3 prototypes, 5 iters each, final variants) | ~$80–150   | 6–10 hours      |
+| Configuration | Token cost | Wall-clock time |
+|---|---|---|
+| Quick mode, 8 tasks | ~$2–5 | 10–20 min |
+| Full mode, 8 tasks | ~$5–10 | 20–40 min |
+| Variant evaluation, 8 tasks × 4 variants | ~$15–25 | 60–120 min |
+| Full session (3 prototypes, 5 iters each, final variants) | ~$80–150 | 6–10 hours |
 
 Costs depend on model, provider pricing, and vision vs. text mode.
 
