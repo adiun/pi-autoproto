@@ -77,7 +77,7 @@ The agent guides you through creating a persona, then starts the evaluation loop
 
 ### 2. Create the persona
 
-The coding agent writes the persona background (who they are, their daily life, pain points, current workarounds). Then the **persona agent** generates the tasks — not the coding agent. This separation means the agent building the app doesn't also define what success looks like. The persona thinks from the user's life context: "what would I actually try to do with this app?"
+The coding agent writes the persona's identity (background, environment, agent instructions) but does **not** write the tasks. A separate `generate_tasks.py` script calls the persona LLM *as the persona* to generate core tasks grounded in their daily life. This separation means the agent building the app doesn't also define what success looks like. The persona thinks from the user's life context: "what would I actually try to do with this app?"
 
 Tasks are split into two categories:
 - **Core tasks** — generated once, fixed for the experiment. These are the stable benchmark that drives keep/discard decisions.
@@ -95,25 +95,27 @@ Tasks are split into two categories:
 ### 4. Monitor progress
 
 - The status widget is always visible above the editor
-- `Ctrl+X` expands the full iteration history with sparkline
+- `Ctrl+X` cycles through compact → expanded → fullscreen (with per-task feedback and variance stats)
 - `/autocrit` shows detailed status
 
 ## Modes
 
 ### Quick mode (default)
 
-Single prototype - meant for fast iteration. It's good for exploring one UX direction.
+Single prototype — meant for fast iteration. It's good for exploring one UX direction.
 
 ### Full mode
 
 Three prototypes with fundamentally different UX approaches, each going through the iteration loop independently. After all prototypes stabilize, `generate_report` produces a comparative analysis.
 
-The most important product design questions are not so much "should this button be blue or green?" but more like "should this be a dashboard or an entity browser?" or "should navigation be portfolio-first or study-first?" These questions can't be answered by iterating on a single prototype, because iteration converges on a local optimum within that prototype criteria. Judging multiple criteria / prototypes side by side is best - but it does take a while!
+The most important product design questions are not so much "should this button be blue or green?" but more like "should this be a dashboard or an entity browser?" or "should navigation be portfolio-first or study-first?" These questions can't be answered by iterating on a single prototype, because iteration converges on a local optimum within that prototype criteria. Judging multiple criteria / prototypes side by side is best — but it does take a while!
 
 The final comparative report shows:
 - Where all prototypes agreed (based on a strong signal, independent of the prototypes knowing about each other)
 - Where they diverged 
 - Which hypotheses were resolved and which remain open
+- Exploratory task findings and session wishlist per prototype
+- Score discrepancy warnings when iteration history diverges from stored results
 
 ## How it works
 
@@ -125,14 +127,25 @@ The package has two parts: an **extension** (tools, state, UI) and a **skill** (
 |------|-------------|
 | `init_autocrit` | Validates dependencies, sets mode (full/quick), configures experiment |
 | `run_evaluation` | Runs the persona agent against the app, returns structured scores and feedback |
-| `log_iteration` | Records results, manages history, detects score plateaus |
+| `log_iteration` | Records results, manages history, archives best results, detects plateaus/stuck tasks/variance |
 | `generate_report` | Produces comparative synthesis across prototypes (full mode) |
 
 ### Persona-driven task generation
 
-The coding agent writes the persona's identity (background, environment, agent instructions) but does **not** write the tasks. A separate `generate_tasks.py` script calls the persona LLM *as the persona* to generate core tasks grounded in their daily life. This simulates how some user research is gathered initially to define a hypothesis around user goals. But when  put it in front of a user they can do anything they want.
+The coding agent writes the persona's identity (background, environment, agent instructions) but does **not** write the tasks. A separate `generate_tasks.py` script calls the persona LLM *as the persona* to generate core tasks grounded in their daily life. This simulates how some user research is gathered initially to define a hypothesis around user goals. But when put in front of a user they can do anything they want.
 
 Core tasks go through a user review gate before evaluation begins.
+
+### Per-task step budgets
+
+Tasks can specify their own step budget via `max_steps` in the persona file. The default quick-mode budget (10 steps) works for simple tasks, but complex tasks that require multi-step data entry (typing ingredients, filling forms, applying multiple filters) can request more steps. Without this, the flat step limit forces all prototypes toward the simplest possible input method — a single textarea — which may not be the best UX for real humans.
+
+```markdown
+#### Task 1: Tuesday night chicken search
+- type: computation
+- max_steps: 15
+- goal: Enter 6 ingredients, apply constraints, pick a recipe...
+```
 
 ### Core vs. exploratory tasks
 
@@ -140,9 +153,13 @@ A fixed task set invites overfitting. Core tasks are the stable benchmark (fixed
 
 The coding agent can't game exploratory tasks because it doesn't know what they'll be until after the code is committed.
 
+Exploratory tasks and their scores appear in the comparative report alongside core tasks, giving visibility into UX issues that the fixed task set doesn't cover.
+
 ### Session wishlist
 
 After all tasks (core + exploratory) complete, the persona reflects on the entire experience in a single cumulative pass. Instead of per-task "it would be nice if..." items, the session wishlist produces wishes grounded in the persona's daily routine and the specific friction they hit during testing. It also includes a "would you actually use this?" honest signal.
+
+Session wishlists are included in the comparative report for each prototype.
 
 ### Evaluation
 
@@ -162,9 +179,9 @@ Core tasks are organized by priority tier and scored by weighted composite:
 composite = (mean(P0 scores) * 0.60) + (mean(P1 scores) * 0.25) + (mean(P2 scores) * 0.15)
 ```
 
-If any P0 (core functionality) task scores 0, the composite is capped at 40, regardless of other scores. Exploratory task scores are reported separately and do not affect this composite.
+If any P0 (core functionality) task scores 0, the composite is capped at 40, regardless of other scores. Exploratory task scores are reported separately and do not affect this composite. Tasks marked as blocked (structurally untestable) are excluded from scoring entirely.
 
-In full mode, four behavioral variants of the same persona (e.g. Rushed, Careful, Skeptical, Confident) evaluate each prototype independently. Where 3 of 4 agree, that's a strong signal. Where they diverge, that's also useful info: it means the app's quality depends on user mood or approach. Verbatim feedback from each variant is preserved and attributed, so you can trace exactly which persona said what.
+In full mode, four behavioral variants of the same persona (e.g. Rushed, Careful, Skeptical, Confident) evaluate each prototype independently. Where 3 of 4 agree, that's a strong signal. Where they diverge, that's also useful info: it means the app's quality depends on user mood or approach. Verbatim feedback from each variant is preserved and attributed, so you can trace exactly which persona said what. If the variant evaluation crashes partway through, completed variant results are preserved — partial data is better than no data.
 
 ### Task design
 
@@ -174,10 +191,45 @@ Tasks are the most important part of the persona file. Weak tasks produce false 
 - At least 2 P0 tasks must end with the persona making a decision or forming an opinion
 - Tasks should embed competing constraints from the persona's life
 - Ambiguity is a feature — the best feedback comes from tasks where the "right answer" depends on the persona's priorities
+- Complex tasks that need multi-step data entry should set `max_steps` higher than the default
+
+### Durability
+
+Several mechanisms protect against data loss and make the iteration loop more reliable:
+
+**Best result archival.** When an iteration achieves a new best score for its branch, `log_iteration` copies `eval_results.json` and screenshots to a protected `best/` directory and git-tags the commit. This prevents the common scenario where a best iteration's results are overwritten or lost during subsequent reverts. The comparative report prefers archived best results over potentially stale proto-level files.
+
+**Score discrepancy detection.** The report cross-references `eval_results.json` scores against the iteration history in `autocrit.jsonl`. If a prototype's actual best kept score is higher than what's in its results file (e.g., because results were lost during reverts), the report flags the discrepancy, shows the peak score, and uses the higher score for winner determination.
+
+**Incremental variant writes.** In variant evaluation mode, results are written to disk after each variant completes. If the process crashes at variant 4 of 4, the first three variants' data is preserved and reported, rather than losing everything.
+
+**Stuck task detection.** If a task scores 0 in three or more consecutive kept iterations with "step limit" stuck points, `log_iteration` flags it as structurally untestable and suggests remedies: increase `max_steps`, mark as blocked, or debug in isolation. Blocked tasks are excluded from the composite score so a single untestable task doesn't cap the entire score.
+
+**Score variance tracking.** Single-run scores can swing 30+ points on identical code. The system tracks per-task score history and, when a score change falls within the historical standard deviation, flags it as "likely noise." This helps the agent (and you) distinguish genuine improvements from random variance when making keep/discard decisions.
+
+**Per-prototype iteration caps.** In full mode, each prototype has a configurable iteration budget (default 5). Warnings appear at 60% and 100% of the budget to prevent the common failure mode of spending all iterations polishing one prototype while others get only a baseline evaluation.
+
+**Feedback fallback.** Quick-mode evaluations skip the persona feedback generation step (for speed), but task notes and stuck-point descriptions still contain rich signal. The report uses a fallback chain — `persona_feedback` → `notes` → `stuck_points` — so verbatim feedback sections are never empty when the persona had something to say.
 
 ### State
 
-All state is stored in an append-only `autocrit.jsonl` file. Each entry is either a config record or an iteration record. If you close the terminal and come back later, the agent reconstructs full state from this log and picks up where it left off.
+All state is stored in an append-only `autocrit.jsonl` file. Each entry is a config record, an iteration record, or a per-task score record. If you close the terminal and come back later, the agent reconstructs full state from this log and picks up where it left off. Per-task score history enables variance tracking and stuck task detection across sessions.
+
+## The comparative report
+
+In full mode, `generate_report` produces a structured comparison across prototypes. The report includes:
+
+| Section | What it shows |
+|---------|--------------|
+| **Prototype Comparison** | Side-by-side scores (composite, P0/P1/P2, exploratory) with peak scores from iteration history |
+| **Score Discrepancies** | Warnings when eval_results.json scores diverge from actual best scores in the iteration log |
+| **Verbatim Feedback** | Per-task feedback from each prototype, with fallback to notes and stuck points |
+| **Exploratory Tasks** | Ad-hoc tasks the persona invented, their scores, and feedback |
+| **Session Wishlist** | Cumulative persona reflections: wishes, surprises, and "would I use this?" |
+| **Why Others Didn't Win** | Task-level analysis of where each losing prototype fell short — failed tasks, unique stuck points, negative feedback |
+| **Recommendations** | Strongest prototype (using best available score), bias flags for validation |
+
+When persona variants are used, the report also includes strongest signals, interesting disagreements, and bias detection.
 
 ## Controlling costs
 
