@@ -123,12 +123,12 @@ The package has two parts: an **extension** (tools, state, UI) and a **skill** (
 
 ### Extension tools
 
-| Tool | What it does |
-|------|-------------|
-| `init_autocrit` | Validates dependencies, sets mode (full/quick), configures experiment |
-| `run_evaluation` | Runs the persona agent against the app, returns structured scores and feedback |
-| `log_iteration` | Records results, manages history, archives best results, detects plateaus/stuck tasks/variance |
-| `generate_report` | Produces comparative synthesis across prototypes (full mode) |
+| Tool              | What it does                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| `init_autocrit`   | Validates dependencies, sets mode (full/quick), configures experiment                          |
+| `run_evaluation`  | Runs the persona agent against the app, returns structured scores and feedback                 |
+| `log_iteration`   | Records results, manages history, archives best results, detects plateaus/stuck tasks/variance |
+| `generate_report` | Produces comparative synthesis across prototypes (full mode)                                   |
 
 ### Persona-driven task generation
 
@@ -219,15 +219,15 @@ All state is stored in an append-only `autocrit.jsonl` file. Each entry is a con
 
 In full mode, `generate_report` produces a structured comparison across prototypes. The report includes:
 
-| Section | What it shows |
-|---------|--------------|
-| **Prototype Comparison** | Side-by-side scores (composite, P0/P1/P2, exploratory) with peak scores from iteration history |
-| **Score Discrepancies** | Warnings when eval_results.json scores diverge from actual best scores in the iteration log |
-| **Verbatim Feedback** | Per-task feedback from each prototype, with fallback to notes and stuck points |
-| **Exploratory Tasks** | Ad-hoc tasks the persona invented, their scores, and feedback |
-| **Session Wishlist** | Cumulative persona reflections: wishes, surprises, and "would I use this?" |
+| Section                   | What it shows                                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Prototype Comparison**  | Side-by-side scores (composite, P0/P1/P2, exploratory) with peak scores from iteration history                       |
+| **Score Discrepancies**   | Warnings when eval_results.json scores diverge from actual best scores in the iteration log                          |
+| **Verbatim Feedback**     | Per-task feedback from each prototype, with fallback to notes and stuck points                                       |
+| **Exploratory Tasks**     | Ad-hoc tasks the persona invented, their scores, and feedback                                                        |
+| **Session Wishlist**      | Cumulative persona reflections: wishes, surprises, and "would I use this?"                                           |
 | **Why Others Didn't Win** | Task-level analysis of where each losing prototype fell short — failed tasks, unique stuck points, negative feedback |
-| **Recommendations** | Strongest prototype (using best available score), bias flags for validation |
+| **Recommendations**       | Strongest prototype (using best available score), bias flags for validation                                          |
 
 When persona variants are used, the report also includes strongest signals, interesting disagreements, and bias detection.
 
@@ -280,12 +280,12 @@ Autocrit uses LLM calls in two places: the coding agent (pi) builds and modifies
 
 ### Rough estimates
 
-| Configuration | Token cost | Wall-clock time |
-|---|---|---|
-| Quick mode, 8 tasks | ~$2–5 | 10–20 min |
-| Full mode, 8 tasks | ~$5–10 | 20–40 min |
-| Variant evaluation, 8 tasks × 4 variants | ~$15–25 | 60–120 min |
-| Full session (3 prototypes, 5 iters each, final variants) | ~$80–150 | 6–10 hours |
+| Configuration                                             | Token cost | Wall-clock time |
+| --------------------------------------------------------- | ---------- | --------------- |
+| Quick mode, 8 tasks                                       | ~$2–5      | 10–20 min       |
+| Full mode, 8 tasks                                        | ~$5–10     | 20–40 min       |
+| Variant evaluation, 8 tasks × 4 variants                  | ~$15–25    | 60–120 min      |
+| Full session (3 prototypes, 5 iters each, final variants) | ~$80–150   | 6–10 hours      |
 
 Costs depend on model, provider pricing, and vision vs. text mode.
 
@@ -300,7 +300,7 @@ Costs depend on model, provider pricing, and vision vs. text mode.
 
 - Start with quick mode and fewer tasks while getting a feel for things
 - Use a cheaper model for the persona agent (e.g., `--model haiku`) — it navigates and clicks, it doesn't need the most capable model
-- Use playwright-cli (text mode) instead of agent-browser (vision mode) for lower per-call token cost
+- Use text mode instead of vision mode for lower per-call token cost
 - Set spending limits on your LLM provider's dashboard
 - Full mode with four persona variants across three prototypes is the most expensive configuration — save it for when the persona and tasks are dialed in
 
