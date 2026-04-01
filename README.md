@@ -26,7 +26,7 @@ Then in pi:
 /skill:autocrit
 ```
 
-The agent guides you through creating a persona, generating tasks, building a seed app, and starting the evaluation loop.
+The agent guides you through creating a persona, generating tasks, building a seed app, and starting the evaluation loop. You can close the terminal and come back later — all state is persisted and the agent picks up where it left off.
 
 ## Install
 
@@ -49,152 +49,101 @@ Then `/reload` in pi.
 
 ### Prerequisites
 
-1. [pi](https://pi.dev/) with an LLM configured in pi
+1. [pi](https://pi.dev/) with an LLM configured
 2. A browser backend (one of):
    - [agent-browser](https://github.com/vercel-labs/agent-browser): `npm install -g agent-browser && agent-browser install` (default, vision mode)
-   - [playwright-cli](https://github.com/microsoft/playwright-cli): `npm install -g @playwright/cli@latest` (text/snapshot mode). After installing, run `bash scripts/setup.sh` with `AUTOCRIT_BROWSER_BACKEND=playwright-cli` to auto-install chromium for the correct Playwright version. Alternatively, `init_autocrit` will auto-install chromium on first use.
+   - [playwright-cli](https://github.com/microsoft/playwright-cli): `npm install -g @playwright/cli@latest` (text/snapshot mode)
 3. [uv](https://docs.astral.sh/uv/): `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 Run `bash scripts/setup.sh` to verify all dependencies.
 
 ## Usage
 
-### 1. Start autocrit
+### 1. Create the persona
 
-```
-/skill:autocrit
-```
+The coding agent writes the persona's identity (background, environment, agent instructions) but does **not** write the tasks. A separate script calls the persona LLM *as the persona* to generate tasks grounded in their daily life. The builder doesn't define what success looks like — the persona does, from their own context. This adversarial split prevents the agent from writing easy tasks for itself.
 
-The agent guides you through creating a persona, then starts the evaluation loop.
-
-### 2. Create the persona
-
-The coding agent writes the persona's identity (background, environment, agent instructions) but does **not** write the tasks. A separate `generate_tasks.py` script calls the persona LLM *as the persona* to generate core tasks grounded in their daily life. This separation means the agent building the app doesn't also define what success looks like. The persona thinks from the user's life context: "what would I actually try to do with this app?"
-
-Tasks are split into two categories:
-- **Core tasks** — generated once, fixed for the experiment. These are the stable benchmark that drives keep/discard decisions.
-- **Exploratory tasks** — generated fresh each evaluation by the persona looking at the current app. These surface UX problems that fixed tasks miss, preventing the coding agent from overfitting to a known test suite.
-
-### 3. The loop
+### 2. The loop
 
 1. The agent edits the app code
-2. `run_evaluation` launches the synthetic persona, who interacts with the app via a browser backend (agent-browser or playwright-cli) in a real browser
-3. Core task scores determine keep/discard. Exploratory task feedback surfaces blind spots.
-4. After all tasks, the persona reflects on the whole experience and produces a grounded **session wishlist** — specific wishes tied to their daily routine and the friction they hit during testing.
-5. `log_iteration` records the result and updates the dashboard
-6. Repeat
+2. `run_evaluation` launches the persona in a real browser — clicking, typing, scrolling, getting confused
+3. Score improved? Keep and commit. Score dropped? Revert. This **keep/discard ratchet** lets the agent take creative risks — a failed radical redesign costs one iteration, not the whole project.
+4. `log_iteration` records the result, then repeat
 
-### 4. Monitor progress
+### 3. Monitor progress
 
-- The status widget is always visible above the editor
-- `Ctrl+X` cycles through compact → expanded → fullscreen (with per-task feedback and variance stats)
-- `/autocrit` shows detailed status
+`Ctrl+X` cycles through compact → expanded → fullscreen dashboard with per-task feedback and variance stats. `/autocrit` shows detailed status.
+
+## What an evaluation looks like
+
+```
+✅ Evaluation complete
+
+Composite: 79.3 | P0: 82 | P1: 63.3 | P2: 95
+
+Task 1 [P0] "Tuesday night chicken search": PASS (score: 55)
+Task 2 [P0] "Ingredient trust check": PASS (score: 96)
+Task 3 [P0] "Competing constraints — dying broccoli AND feed Lily": PASS (score: 95)
+Task 4 [P1] "Pantry-only desperation — beat butter pasta": PASS (score: 95)
+Task 5 [P1] "Enough info to pick without recipe-hopping": PASS (score: 95)
+Task 6 [P1] "See what one extra ingredient would unlock": FAIL (score: 0)
+  Stuck: Reached maximum step limit
+Task 7 [P2] "Filter by cuisine mood": PASS (score: 96)
+Task 8 [P2] "Sort by fastest option": PASS (score: 94)
+```
+
+Each task produces a score, step count, stuck points, and verbatim persona feedback. The composite score drives keep/discard. The qualitative feedback drives what to change next.
 
 ## Modes
 
 ### Quick mode (default)
 
-Single prototype — meant for fast iteration. It's good for exploring one UX direction.
+Single prototype, fast iteration. Good for exploring one UX direction.
 
 ### Full mode
 
-Three prototypes with fundamentally different UX approaches, each going through the iteration loop independently. After all prototypes stabilize, `generate_report` produces a comparative analysis.
+Three prototypes with fundamentally different UX approaches, each going through the iteration loop independently. The most important product design questions aren't "should this button be blue or green?" but "should this be a dashboard or a conversational flow?" These can't be answered by iterating on one prototype.
 
-The most important product design questions are not so much "should this button be blue or green?" but more like "should this be a dashboard or an entity browser?" or "should navigation be portfolio-first or study-first?" These questions can't be answered by iterating on a single prototype, because iteration converges on a local optimum within that prototype criteria. Judging multiple criteria / prototypes side by side is best — but it does take a while!
-
-The final comparative report shows:
-- Where all prototypes agreed (based on a strong signal, independent of the prototypes knowing about each other)
-- Where they diverged 
-- Which hypotheses were resolved and which remain open
-- Exploratory task findings and session wishlist per prototype
-- Score discrepancy warnings when iteration history diverges from stored results
+After all prototypes stabilize, `generate_report` produces a comparative analysis: where prototypes agreed, where they diverged, which hypotheses were resolved, and which prototype to take forward.
 
 ## An important note
 
-Autocrit is a tool for early-stage exploration and validation. It is not a replacement for the full product development lifecycle.
+Autocrit is a tool for early-stage exploration and validation, not a replacement for the full product development lifecycle.
 
-A synthetic persona is not a real user. It's a behavioral sketch with a backstory, some tasks, and personality traits. It produces plausible interaction patterns, but it lacks actual prior experience, social context, emotional variability, and the ability to learn and adapt over time. In the future I'd love to set up a digital twin infra where the definition of the user improves over time. But that's not this right now! 
+A synthetic persona is not a real user. It produces plausible interaction patterns but lacks real prior experience, social context, and emotional variability. The appropriate response to its results is "this gives us confidence to invest deeper in approach A" or "this suggests we should test this model with real users." Not "ship it."
 
-What autocrit tells you is which design hypotheses survived contact with a simulated user. The appropriate response to its results is "this gives us confidence to invest deeper in approach A" or "this suggests we should test the feasibility-first model with real users." Not "ship it."
-
-Use it to:
-- Rapidly explore whether an idea has legs before committing engineering resources
-- Compare fundamentally different UX approaches against the same user definition
-- Surface behavioral friction points that are hard to spot by just looking at a UI
-- Generate structured hypotheses to bring into real user research
-
-Do not use it to:
-- Skip user research entirely
-- Make final product decisions based solely on synthetic feedback
-- Assume high scores mean the product is ready for real users
-
-To me, this is a new "inner loop" within a potentially new take on the SDLC. But it doesn't replace the entire SDLC. 
+Use it to explore whether an idea has legs, compare fundamentally different UX approaches, surface behavioral friction, and generate structured hypotheses for real user research. Don't use it to skip user research or make final product decisions.
 
 ## How it works
 
-The package has two parts: an **extension** (tools, state, UI) and a **skill** (workflow knowledge). The extension provides domain-agnostic evaluation infrastructure. The skill encodes the UX evaluation workflow, persona creation methodology, and iteration discipline.
+The package has two parts: an **extension** (tools, state, UI) and a **skill** (workflow knowledge). Prototype apps are built with [Vite+](https://github.com/nicepkg/vite-plus), added as a per-project devDependency — the evaluation tools start a dev server automatically and HMR handles code changes between iterations.
 
-Prototype apps are built with [Vite+](https://github.com/nicepkg/vite-plus) (`vite-plus`), added as a per-project devDependency. The evaluation tools start a Vite dev server automatically — HMR means code changes are picked up without restarting between iterations.
+### Black-box evaluation
 
-### Extension tools
+The persona agent runs in a completely separate process (`pi -p`). It has zero access to the coding agent's conversation, the source code, or any context about what was built. It can only see what a real user would see: the running app in a browser. Two browser backends are supported:
 
-| Tool | What it does |
-|------|-------------|
-| `init_autocrit` | Validates dependencies, sets mode (full/quick), configures experiment |
-| `run_evaluation` | Runs the persona agent against the app, returns structured scores and feedback |
-| `log_iteration` | Records results, manages history, archives best results, detects plateaus/stuck tasks/variance |
-| `generate_report` | Produces comparative synthesis across prototypes (full mode) |
+- **agent-browser** (default) — annotated screenshots (vision mode). The persona "sees" numbered labels overlaid on interactive elements.
+- **playwright-cli** — Playwright's accessibility tree (text mode). Lower token cost, better for modals/overlays.
 
-### Persona-driven task generation
+Via the browser backend, the persona navigates pages, clicks buttons, fills forms, gets confused, tries alternatives, succeeds or fails. Each step produces a reasoning trace.
 
-The coding agent writes the persona's identity (background, environment, agent instructions) but does **not** write the tasks. A separate `generate_tasks.py` script calls the persona LLM *as the persona* to generate core tasks grounded in their daily life. This simulates how some user research is gathered initially to define a hypothesis around user goals. But when put in front of a user they can do anything they want.
+### Scoring
 
-Core tasks go through a user review gate before evaluation begins.
-
-### Per-task step budgets
-
-Tasks can specify their own step budget via `max_steps` in the persona file. The default quick-mode budget (10 steps) works for simple tasks, but complex tasks that require multi-step data entry (typing ingredients, filling forms, applying multiple filters) can request more steps. Without this, the flat step limit forces all prototypes toward the simplest possible input method — a single textarea — which may not be the best UX for real humans.
-
-```markdown
-#### Task 1: Tuesday night chicken search
-- type: computation
-- max_steps: 15
-- goal: Enter 6 ingredients, apply constraints, pick a recipe...
-```
-
-### Core vs. exploratory tasks
-
-A fixed task set invites overfitting. Core tasks are the stable benchmark (fixed for the experiment, drive keep/discard decisions), but each full-mode evaluation also generates **exploratory tasks** — 2-3 ad-hoc tasks the persona invents by looking at the current app. These are scored separately (tier `EX`, not in the composite) and produce qualitative feedback that surfaces edge cases, dead ends, and confusing affordances the core tasks miss.
-
-The coding agent can't game exploratory tasks because it doesn't know what they'll be until after the code is committed.
-
-Exploratory tasks and their scores appear in the comparative report alongside core tasks, giving visibility into UX issues that the fixed task set doesn't cover.
-
-### Session wishlist
-
-After all tasks (core + exploratory) complete, the persona reflects on the entire experience in a single cumulative pass. Instead of per-task "it would be nice if..." items, the session wishlist produces wishes grounded in the persona's daily routine and the specific friction they hit during testing. It also includes a "would you actually use this?" honest signal.
-
-Session wishlists are included in the comparative report for each prototype.
-
-### Evaluation
-
-The persona agent runs in a completely separate `pi -p` process. It has no access to the coding agent's conversation, the source code, or any context about what was built or why. It can only see what a real user would see: the running app in a browser. This is black-box testing — prevents the evaluation from being contaminated by knowledge of the implementation.
-
-Two browser backends are supported:
-- **agent-browser** (default) — uses annotated screenshots (vision mode). The persona "sees" numbered labels overlaid on the page.
-- **playwright-cli** — uses Playwright's accessibility tree (text/snapshot mode). The persona "sees" structured text like a screen reader. Better for modals/overlays, lower token cost, no vision model required.
-
-Set the backend in `init_autocrit` or via `AUTOCRIT_BROWSER_BACKEND=playwright-cli`.
-
-Via the browser backend, the persona navigates pages, clicks buttons, fills forms, gets confused, tries alternatives, succeeds or fails. Each step produces a reasoning trace. The evaluation captures whether a task was completed but also how many steps it took, where the persona got stuck, and verbatim feedback explaining their experience in their own words.
-
-Core tasks are organized by priority tier and scored by weighted composite:
+Tasks are organized by priority tier with a weighted composite:
 
 ```
-composite = (mean(P0 scores) * 0.60) + (mean(P1 scores) * 0.25) + (mean(P2 scores) * 0.15)
+composite = (mean(P0 scores) × 0.60) + (mean(P1 scores) × 0.25) + (mean(P2 scores) × 0.15)
 ```
 
-If any P0 (core functionality) task scores 0, the composite is capped at 40, regardless of other scores. Exploratory task scores are reported separately and do not affect this composite. Tasks marked as blocked (structurally untestable) are excluded from scoring entirely.
+If any P0 task scores 0, the composite is capped at 40 — you can't score high by perfecting P2 while core functionality is broken.
+
+Tasks can specify per-task step budgets via `max_steps` in the persona file, so complex tasks that need multi-step data entry aren't artificially constrained by the default limit.
+
+### Exploratory tasks and session wishlist
+
+A fixed task set invites overfitting. In full-mode evaluations, the persona also generates **exploratory tasks** — 2-3 ad-hoc things it wants to try based on what it sees. These are scored separately (not in composite) and surface edge cases the core tasks miss. The coding agent can't game them because it doesn't know what they'll be.
+
+After all tasks, the persona reflects on the whole experience and produces a **session wishlist** — wishes grounded in their daily routine and the friction they hit, plus a "would you actually use this?" honest signal. Both appear in the comparative report.
 
 ### Persona variants
 
@@ -205,57 +154,34 @@ Single-run scores are noisy — the same code can score 50 one run and 80 the ne
 - **Skeptical Marco** — doesn't trust the app, double-checks every result
 - **Exhausted Marco** — after a double shift, zero patience for anything confusing
 
-Each variant evaluates the app independently. Where 3 of 4 agree, that's a strong signal — the finding holds regardless of the user's mood. Where they disagree, that's also useful: it means the app's quality depends on user approach, which is itself a design insight. Verbatim feedback from each variant is preserved and attributed, so you can trace exactly which persona said what.
+Each variant evaluates independently. Where 3 of 4 agree, that's a strong signal. Where they diverge, the app's quality depends on user mood — which is itself a design insight.
 
-Variant evaluation is the most time-intensive step (~60–120 min for 8 tasks × 4 variants) but produces the highest-confidence scores. If a variant evaluation crashes partway through, completed variant results are preserved — partial data is better than no data.
-
-### Task design
-
-Tasks are the most important part of the persona file. Weak tasks produce false confidence — any reasonable prototype will score 90+ if the tasks only check whether information is displayed. The system enforces task quality through the persona-driven generation and through design principles baked into the skill:
-
-- Tasks should require judgment by the end-user and should be simple tasks like navigation
-- At least 2 P0 tasks must end with the persona making a decision or forming an opinion
-- Tasks should embed competing constraints from the persona's life
-- Ambiguity is a feature — the best feedback comes from tasks where the "right answer" depends on the persona's priorities
-- Complex tasks that need multi-step data entry should set `max_steps` higher than the default
+When all four variants score >80 with no concrete criticism, the system flags it as **possible sycophancy bias** — a real problem with LLM evaluation that most tools ignore.
 
 ### Durability
 
-Several mechanisms protect against data loss and make the iteration loop more reliable:
+Several mechanisms protect against data loss and noisy scores:
 
-**Best result archival.** When an iteration achieves a new best score for its branch, `log_iteration` copies `eval_results.json` and screenshots to a protected `best/` directory and git-tags the commit. This prevents the common scenario where a best iteration's results are overwritten or lost during subsequent reverts. The comparative report prefers archived best results over potentially stale proto-level files.
-
-**Score discrepancy detection.** The report cross-references `eval_results.json` scores against the iteration history in `autocrit.jsonl`. If a prototype's actual best kept score is higher than what's in its results file (e.g., because results were lost during reverts), the report flags the discrepancy, shows the peak score, and uses the higher score for winner determination.
-
-**Incremental variant writes.** In variant evaluation mode, results are written to disk after each variant completes. If the process crashes at variant 4 of 4, the first three variants' data is preserved and reported, rather than losing everything.
-
-**Stuck task detection.** If a task scores 0 in three or more consecutive kept iterations with "step limit" stuck points, `log_iteration` flags it as structurally untestable and suggests remedies: increase `max_steps`, mark as blocked, or debug in isolation. Blocked tasks are excluded from the composite score so a single untestable task doesn't cap the entire score.
-
-**Score variance tracking.** Single-run scores can swing 30+ points on identical code. The system tracks per-task score history and, when a score change falls within the historical standard deviation, flags it as "likely noise." This helps the agent (and you) distinguish genuine improvements from random variance when making keep/discard decisions.
-
-**Per-prototype iteration caps.** In full mode, each prototype has a configurable iteration budget (default 5). Warnings appear at 60% and 100% of the budget to prevent the common failure mode of spending all iterations polishing one prototype while others get only a baseline evaluation.
-
-**Feedback fallback.** Quick-mode evaluations skip the persona feedback generation step (for speed), but task notes and stuck-point descriptions still contain rich signal. The report uses a fallback chain — `persona_feedback` → `notes` → `stuck_points` — so verbatim feedback sections are never empty when the persona had something to say.
-
-### State
-
-All state is stored in an append-only `autocrit.jsonl` file. Each entry is a config record, an iteration record, or a per-task score record. If you close the terminal and come back later, the agent reconstructs full state from this log and picks up where it left off. Per-task score history enables variance tracking and stuck task detection across sessions.
+- **Best result archival.** Best scores are copied to a protected `best/` directory and git-tagged. The comparative report prefers archived results over potentially stale files.
+- **Score discrepancy detection.** The report cross-references results files against iteration history and flags when scores diverge due to lost data.
+- **Stuck task detection.** Tasks that score 0 across 3+ iterations with step-limit stuck points are flagged as structurally untestable and can be excluded from scoring.
+- **Variance tracking.** Per-task score history flags changes within historical stdev as "likely noise" to improve keep/discard decisions.
+- **Per-prototype iteration caps.** Warnings at 60% and 100% of budget prevent over-investing in one prototype at the expense of others.
+- **Incremental variant writes.** If a variant evaluation crashes partway through, completed variants are preserved.
+- **Session resume.** All state is append-only in `autocrit.jsonl`. Close the terminal, come back tomorrow, the agent picks up exactly where it left off.
 
 ## The comparative report
 
-In full mode, `generate_report` produces a structured comparison across prototypes. The report includes:
+In full mode, `generate_report` produces a structured comparison:
 
 | Section | What it shows |
 |---------|--------------|
-| **Prototype Comparison** | Side-by-side scores (composite, P0/P1/P2, exploratory) with peak scores from iteration history |
-| **Score Discrepancies** | Warnings when eval_results.json scores diverge from actual best scores in the iteration log |
+| **Prototype Comparison** | Side-by-side scores with peak scores from iteration history |
 | **Verbatim Feedback** | Per-task feedback from each prototype, with fallback to notes and stuck points |
 | **Exploratory Tasks** | Ad-hoc tasks the persona invented, their scores, and feedback |
 | **Session Wishlist** | Cumulative persona reflections: wishes, surprises, and "would I use this?" |
-| **Why Others Didn't Win** | Task-level analysis of where each losing prototype fell short — failed tasks, unique stuck points, negative feedback |
+| **Why Others Didn't Win** | Task-level analysis of where each losing prototype fell short |
 | **Recommendations** | Strongest prototype (using best available score), bias flags for validation |
-
-When persona variants are used, the report also includes strongest signals, interesting disagreements, and bias detection.
 
 ## How autocrit compares
 
@@ -302,9 +228,7 @@ Asking an LLM to score an app description, spec, or screenshot directly.
 
 ## Cost and performance
 
-Autocrit uses LLM calls in two places: the coding agent (pi) builds and modifies the app, and the persona agent evaluates it by interacting with it in a browser. Cost and time scale with the number of tasks, steps per task, and iterations.
-
-### Rough estimates
+Cost and time scale with number of tasks, steps per task, and iterations.
 
 | Configuration | Token cost | Wall-clock time |
 |---|---|---|
@@ -313,22 +237,7 @@ Autocrit uses LLM calls in two places: the coding agent (pi) builds and modifies
 | Variant evaluation, 8 tasks × 4 variants | ~$15–25 | 60–120 min |
 | Full session (3 prototypes, 5 iters each, final variants) | ~$80–150 | 6–10 hours |
 
-Costs depend on model, provider pricing, and vision vs. text mode.
-
-### What drives cost
-
-- **Tasks × steps × LLM calls per step.** Each step is one LLM call. More tasks and higher `max_steps` = more calls.
-- **Vision mode.** Annotated screenshots (agent-browser) include image tokens. Text mode (playwright-cli) is cheaper.
-- **Feedback generation.** Full mode adds 1 LLM call per task for persona feedback, plus exploratory tasks and session wishlist.
-- **Variant mode.** Multiplies everything by the variant count (default 4).
-
-### Managing costs
-
-- Start with quick mode and fewer tasks while getting a feel for things
-- Use a cheaper model for the persona agent (e.g., `--model haiku`) — it navigates and clicks, it doesn't need the most capable model
-- Use text mode instead of vision mode for lower per-call token cost
-- Set spending limits on your LLM provider's dashboard
-- Full mode with four persona variants across three prototypes is the most expensive configuration — save it for when the persona and tasks are dialed in
+Costs depend on model, provider pricing, and vision vs. text mode. To manage: start with quick mode and fewer tasks, use a cheaper model for the persona agent (it navigates and clicks — it doesn't need the most capable model), use text mode for lower token cost, and save full mode with variants for when the persona and tasks are dialed in.
 
 ## License
 
