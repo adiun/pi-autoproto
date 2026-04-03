@@ -6,9 +6,9 @@ For your earliest stages of product development: build a prototype, define your 
 
 ## Why
 
-Building software with AI is getting fast and cheap. You can generate a working prototype in minutes. So the bottleneck has shifted from production to evaluation. You can spin up ten prototypes in the time it used to take to build one, but how do you know which one is good? Human evaluation doesn't scale to that pace.
+Building software with AI is getting fast and cheap. You can generate a working prototype in minutes. So the bottleneck has shifted from production to evaluation - you can spin up ten prototypes in the time it used to take to build one, but how do you know which one is good? Human evaluation doesn't scale to that pace.
 
-More of the work now is on designing environments, feedback loops, and control systems. Engineers can provide direction, judgment, and taste. The agents do the building. But someone still needs to tell you whether what got built is any good and do it fast enough to keep up.
+More of the work now is on designing environments, feedback loops, and control systems. Engineers can provide direction, judgment, and taste while the agents do the building. But someone still needs to tell you whether what got built is any good and they need to it fast enough to keep up.
 
 A **'crit'** in design is a session where prototypes get constructive feedback to find flaws early. **Autocrit** automates that. A synthetic persona with a backstory, tasks, and behavioral traits actually uses the app in a real browser and reports what worked, what didn't, and why. The coding agent reads that feedback and iterates. The loop runs autonomously. In the morning, you have an app that's been through dozens of critique cycles, each one targeted at a specific failure or friction point.
 
@@ -100,8 +100,8 @@ takes more than a couple of taps, you'll get frustrated. You think in terms of
 ### 2. The loop
 
 1. The agent edits the app code
-2. `run_evaluation` launches the persona in a real browser — clicking, typing, scrolling, getting confused
-3. Score improved? Keep and commit. Score dropped? Revert. This **keep/discard ratchet** lets the agent take creative risks — a failed radical redesign costs one iteration, not the whole project.
+2. `run_evaluation` launches the persona in a real browser by clicking, typing, scrolling, getting confused
+3. If the score improves, then keep the iteration and commit it. If the score drops, then revert it. This **keep/discard ratchet** lets the agent take creative risks — a failed radical redesign costs one iteration, not the whole project.
 4. `log_iteration` records the result, then repeat
 
 ### 3. Monitor progress
@@ -169,7 +169,7 @@ Use it to explore whether an idea has legs, compare fundamentally different UX a
 
 ## How it works
 
-The package has two parts: an **extension** (tools, state, UI) and a **skill** (workflow knowledge). Prototype apps are built with [Vite+](https://github.com/nicepkg/vite-plus), added as a per-project devDependency — the evaluation tools start a dev server automatically and HMR handles code changes between iterations.
+The package has two parts: an **extension** (tools, state, UI) and a **skill** (workflow knowledge). Prototype apps are built with [Vite+](https://github.com/nicepkg/vite-plus). The evaluation tools start a dev server automatically and HMR handles code changes between iterations.
 
 ### Black-box evaluation
 
