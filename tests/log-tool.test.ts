@@ -11,15 +11,15 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { createMockPi, type MockPi } from "./mock-pi.js";
-import { createRuntime, type AutocritRuntime } from "../extensions/pi-autocrit/state.js";
-import { registerLogTool } from "../extensions/pi-autocrit/tools/log.js";
+import { createRuntime, type AutoprotoRuntime } from "../extensions/pi-autoproto/state.js";
+import { registerLogTool } from "../extensions/pi-autoproto/tools/log.js";
 
 let mock: MockPi;
-let runtime: AutocritRuntime;
+let runtime: AutoprotoRuntime;
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "autocrit-log-test-"));
+	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "autoproto-log-test-"));
 	mock = createMockPi();
 	runtime = createRuntime();
 	runtime.state.active = true;
@@ -58,7 +58,7 @@ describe("log_iteration score auto-read", () => {
 		writeEvalResults(tmpDir, 0, { composite: 75.5, p0: 80, p1: 60, p2: 50 });
 
 		// Write a jsonl config so reconstructState knows we're active
-		const jsonlPath = path.join(tmpDir, "autocrit.jsonl");
+		const jsonlPath = path.join(tmpDir, "autoproto.jsonl");
 		fs.writeFileSync(jsonlPath, JSON.stringify({ type: "config", mode: "quick", experiment: "test", resultsDir: "results" }) + "\n");
 
 		const result = await callLog({

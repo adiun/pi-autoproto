@@ -1,4 +1,4 @@
-# pi-autocrit
+# pi-autoproto
 
 Persona-driven UX evaluation for [pi](https://pi.dev/), inspired by ideas from [autoresearch](https://github.com/karpathy/autoresearch).
 
@@ -10,20 +10,20 @@ Building software with AI is getting fast and cheap. You can generate a working 
 
 More of the work now is on designing environments, feedback loops, and control systems. Engineers can provide direction, judgment, and taste while the agents do the building. But someone still needs to tell you whether what got built is any good and they need to it fast enough to keep up.
 
-A **'crit'** in design is a session where prototypes get constructive feedback to find flaws early. **Autocrit** automates that. A synthetic persona with a backstory, tasks, and behavioral traits actually uses the app in a real browser and reports what worked, what didn't, and why. The coding agent reads that feedback and iterates. The loop runs autonomously. In the morning, you have an app that's been through dozens of critique cycles, each one targeted at a specific failure or friction point.
+A **'crit'** in design is a session where prototypes get constructive feedback to find flaws early. **Autoproto** automates that. A synthetic persona with a backstory, tasks, and behavioral traits actually uses the app in a real browser and reports what worked, what didn't, and why. The coding agent reads that feedback and iterates. The loop runs autonomously. In the morning, you have an app that's been through dozens of critique cycles, each one targeted at a specific failure or friction point.
 
 The main value is a structured, repeatable critique. It's early and rough, but it works and I hope it can accelerate prototypes into useful products for humans.
 
 ## Quick start
 
 ```
-pi install https://github.com/adiun/pi-autocrit
+pi install https://github.com/adiun/pi-autoproto
 ```
 
 Then in pi:
 
 ```
-/skill:autocrit
+/skill:autoproto
 ```
 
 The agent guides you through creating a persona, generating tasks, building a seed app, and starting the evaluation loop. You can close the terminal and come back later — all state is persisted and the agent picks up where it left off.
@@ -31,16 +31,16 @@ The agent guides you through creating a persona, generating tasks, building a se
 ## Install
 
 ```bash
-pi install https://github.com/adiun/pi-autocrit
+pi install https://github.com/adiun/pi-autoproto
 ```
 
 <details>
 <summary>Manual install</summary>
 
 ```bash
-cp -r extensions/pi-autocrit ~/.pi/agent/extensions/
-cp -r skills/autocrit ~/.pi/agent/skills/
-cp -r python ~/.pi/agent/extensions/pi-autocrit/../../python
+cp -r extensions/pi-autoproto ~/.pi/agent/extensions/
+cp -r skills/autoproto ~/.pi/agent/skills/
+cp -r python ~/.pi/agent/extensions/pi-autoproto/../../python
 ```
 
 Then `/reload` in pi.
@@ -62,7 +62,7 @@ Then `/reload` in pi.
 
 The coding agent writes the persona's identity (background, environment, agent instructions) but does **not** write the tasks. A separate script calls the persona LLM *as the persona* to generate tasks grounded in their daily life. The builder doesn't define what success looks like — the persona does, from their own context. This adversarial split prevents the agent from writing easy tasks for itself.
 
-![The agent creates Marco's persona — a 35yo software engineer in Chicago who cooks 3-4 nights a week and gets home at 6:15 with a 30-minute window before his 3-year-old needs to eat](images/autocrit-persona.png)
+![The agent creates Marco's persona — a 35yo software engineer in Chicago who cooks 3-4 nights a week and gets home at 6:15 with a 30-minute window before his 3-year-old needs to eat](images/autoproto-persona.png)
 
 That creates `persona.md`:
 
@@ -106,13 +106,13 @@ takes more than a couple of taps, you'll get frustrated. You think in terms of
 
 ### 3. Monitor progress
 
-`Ctrl+X` cycles through compact → expanded → fullscreen dashboard with per-task feedback and variance stats. `/autocrit` shows detailed status.
+`Ctrl+X` cycles through compact → expanded → fullscreen dashboard with per-task feedback and variance stats. `/autoproto` shows detailed status.
 
-![The expanded dashboard showing iteration history — scores, deltas, kept/discarded status, and a sparkline trend](images/autocrit-widget.png)
+![The expanded dashboard showing iteration history — scores, deltas, kept/discarded status, and a sparkline trend](images/autoproto-widget.png)
 
 ## What the output looks like
 
-![A completed evaluation showing per-task scores, variance analysis flagging noise, iteration budget tracking, and the agent deciding to move to the next prototype](images/autocrit-completedevaluation.png)
+![A completed evaluation showing per-task scores, variance analysis flagging noise, iteration budget tracking, and the agent deciding to move to the next prototype](images/autoproto-completedevaluation.png)
 
 Each evaluation produces per-task scores, stuck points, and verbatim persona feedback. The composite score drives keep/discard decisions. `log_iteration` archives best results, tracks score variance across iterations, and warns when you're running out of iteration budget.
 
@@ -155,13 +155,13 @@ Single prototype, fast iteration. Good for exploring one UX direction.
 
 Three prototypes with fundamentally different UX approaches, each going through the iteration loop independently. The most important product design questions aren't "should this button be blue or green?" but "should this be a dashboard or a conversational flow?" These can't be answered by iterating on one prototype.
 
-![Three genuinely different UX approaches for a recipe finder — Constraint Builder, Ingredient Pantry, and Decision Funnel — each grounded in the persona's mental model](images/autocrit-approaches.png)
+![Three genuinely different UX approaches for a recipe finder — Constraint Builder, Ingredient Pantry, and Decision Funnel — each grounded in the persona's mental model](images/autoproto-approaches.png)
 
 After all prototypes stabilize, `generate_report` produces a comparative analysis: where prototypes agreed, where they diverged, which hypotheses were resolved, and which prototype to take forward.
 
 ## An important note
 
-Autocrit is a tool for early-stage exploration and validation, not a replacement for the full product development lifecycle.
+Autoproto is a tool for early-stage exploration and validation, not a replacement for the full product development lifecycle.
 
 A synthetic persona is not a real user. It produces plausible interaction patterns but lacks real prior experience, social context, and emotional variability. The appropriate response to its results is "this gives us confidence to invest deeper in approach A" or "this suggests we should test this model with real users." Not "ship it."
 
@@ -221,7 +221,7 @@ Several mechanisms protect against data loss and noisy scores:
 - **Variance tracking.** Per-task score history flags changes within historical stdev as "likely noise" to improve keep/discard decisions.
 - **Per-prototype iteration caps.** Warnings at 60% and 100% of budget prevent over-investing in one prototype at the expense of others.
 - **Incremental variant writes.** If a variant evaluation crashes partway through, completed variants are preserved.
-- **Session resume.** All state is append-only in `autocrit.jsonl`. Close the terminal, come back tomorrow, the agent picks up exactly where it left off.
+- **Session resume.** All state is append-only in `autoproto.jsonl`. Close the terminal, come back tomorrow, the agent picks up exactly where it left off.
 
 ## The comparative report
 
@@ -236,7 +236,7 @@ In full mode, `generate_report` produces a structured comparison:
 | **Why Others Didn't Win** | Task-level analysis of where each losing prototype fell short |
 | **Recommendations** | Strongest prototype (using best available score), bias flags for validation |
 
-## How autocrit compares
+## How autoproto compares
 
 ### vs. traditional user testing
 
@@ -245,7 +245,7 @@ Recruiting participants, scheduling sessions, synthesizing notes.
 - **Speed:** Overnight autonomous runs vs. weeks of recruiting and scheduling
 - **Cost:** LLM tokens vs. user incentives and researcher time
 - **Repeatability:** Versioned, comparable across iterations vs. qualitative and one-shot
-- **Tradeoff:** Synthetic behavior — plausible but not real human judgment. Autocrit generates hypotheses for user research, not conclusions that replace it.
+- **Tradeoff:** Synthetic behavior — plausible but not real human judgment. Autoproto generates hypotheses for user research, not conclusions that replace it.
 
 ### vs. screenshot-based UI evaluation
 

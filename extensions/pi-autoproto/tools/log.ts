@@ -16,7 +16,7 @@ import * as path from "node:path";
 import {
 	appendIteration as persistIteration,
 	appendTaskScores,
-	type AutocritRuntime,
+	type AutoprotoRuntime,
 	type IterationResult,
 	type TaskScoreEntry,
 	isPlateaued,
@@ -28,13 +28,13 @@ import {
 } from "../state.js";
 import { appendResultsTsv, appendIterationHistory } from "../utils.js";
 
-export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRuntime) {
+export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutoprotoRuntime) {
 	pi.registerTool({
 		name: "log_iteration",
 		label: "Log Iteration",
 		description:
 			"Record the result of an evaluation iteration. Updates results.tsv, iteration_history.jsonl, " +
-			"and autocrit.jsonl. Reports plateau detection, stuck task warnings, score variance analysis, " +
+			"and autoproto.jsonl. Reports plateau detection, stuck task warnings, score variance analysis, " +
 			"and iteration budget status. Archives best iteration results automatically.",
 		promptSnippet: "Record iteration result (scores, description, kept/discarded). Detects plateaus, stuck tasks, and score variance.",
 		promptGuidelines: [
@@ -62,7 +62,7 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 
 			if (!state.active) {
 				return {
-					content: [{ type: "text", text: "❌ Autocrit not initialized. Call init_autocrit first." }],
+					content: [{ type: "text", text: "❌ Autoproto not initialized. Call init_autoproto first." }],
 					details: {},
 				};
 			}
@@ -118,7 +118,7 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 				timestamp: Date.now(),
 			};
 
-			// Persist iteration to autocrit.jsonl
+			// Persist iteration to autoproto.jsonl
 			persistIteration(ctx.cwd, result);
 
 			// Track per-task scores for stuck detection and variance analysis
@@ -196,14 +196,14 @@ export function registerLogTool(pi: ExtensionAPI, getRuntime: () => AutocritRunt
 				} catch { /* best-effort */ }
 
 				// Git tag the best iteration
-				const tagName = `autocrit/${state.experimentName ?? "exp"}/${branchSlug}/best-iter-${params.iteration}-score-${composite!.toFixed(0)}`;
+				const tagName = `autoproto/${state.experimentName ?? "exp"}/${branchSlug}/best-iter-${params.iteration}-score-${composite!.toFixed(0)}`;
 				try {
 					await pi.exec("git", ["tag", "-f", tagName]);
 				} catch { /* git tag is best-effort */ }
 			}
 
 			// Persist state to session
-			pi.appendEntry("autocrit-state", { state });
+			pi.appendEntry("autoproto-state", { state });
 
 			// ── Build response ───────────────────────────────────────────────
 			const iters = currentBranchIterations(state);

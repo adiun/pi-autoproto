@@ -136,7 +136,7 @@ def test_e2e_single_persona(
             "--output-dir", output_dir,
             "--cmd", "echo test",
         ]):
-            with patch.dict(os.environ, {"AUTOCRIT_EVAL_CMD": "echo test"}):
+            with patch.dict(os.environ, {"AUTOPROTO_EVAL_CMD": "echo test"}):
                 import evaluate
                 evaluate.main()
 
@@ -241,7 +241,7 @@ def test_e2e_multi_variant(
                 "--cmd", "echo test",
                 "--variants", "3",
             ]):
-                with patch.dict(os.environ, {"AUTOCRIT_EVAL_CMD": "echo test"}):
+                with patch.dict(os.environ, {"AUTOPROTO_EVAL_CMD": "echo test"}):
                     import evaluate
                     evaluate.main()
 

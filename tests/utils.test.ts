@@ -12,13 +12,13 @@ import {
 	parsePersonaTaskMetadata,
 	formatScoreLine, appendResultsTsv, appendIterationHistory,
 	formatDuration, getElapsedMs, sparkline,
-} from "../extensions/pi-autocrit/utils.js";
-import { createState, type AutocritState } from "../extensions/pi-autocrit/state.js";
+} from "../extensions/pi-autoproto/utils.js";
+import { createState, type AutoprotoState } from "../extensions/pi-autoproto/state.js";
 
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "autocrit-utils-test-"));
+	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "autoproto-utils-test-"));
 });
 
 afterEach(() => {

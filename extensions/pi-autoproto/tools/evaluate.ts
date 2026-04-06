@@ -17,7 +17,7 @@ import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AutocritRuntime } from "../state.js";
+import type { AutoprotoRuntime } from "../state.js";
 import { buildEvaluateCommand, getPythonDir, parsePersonaTaskMetadata, formatDuration, getElapsedMs } from "../utils.js";
 import {
 	readEvalResults, mergeTaskResult, recomputeScores, computeTaskTimeoutMs,
@@ -32,7 +32,7 @@ const EVAL_MAX_BYTES = 8 * 1024; // 8KB
 // Base timeout for all-at-once modes (server startup, etc.)
 const TIMEOUT_BASE_MS = 60_000;
 
-export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => AutocritRuntime) {
+export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => AutoprotoRuntime) {
 	pi.registerTool({
 		name: "run_evaluation",
 		label: "Run Evaluation",
@@ -77,7 +77,7 @@ export function registerEvaluateTool(pi: ExtensionAPI, getRuntime: () => Autocri
 				return {
 					content: [{
 						type: "text",
-						text: "❌ Autocrit not initialized. Call init_autocrit first.",
+						text: "❌ Autoproto not initialized. Call init_autoproto first.",
 					}],
 					details: {},
 				};

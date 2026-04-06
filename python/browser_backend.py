@@ -6,7 +6,7 @@ concrete implementations:
 - AgentBrowserBackend  — wraps agent-browser CLI (default)
 - PlaywrightCLIBackend — wraps playwright-cli (alternative)
 
-Select backend via --browser-backend flag or AUTOCRIT_BROWSER_BACKEND env var.
+Select backend via --browser-backend flag or AUTOPROTO_BROWSER_BACKEND env var.
 """
 
 import os
@@ -172,7 +172,7 @@ class PlaywrightCLIBackend:
     name = "playwright-cli"
     supports_vision = False
 
-    def __init__(self, session: str = "autocrit") -> None:
+    def __init__(self, session: str = "autoproto") -> None:
         self._session = session
 
     def _run(self, cmd: str, **kwargs) -> str:
@@ -299,9 +299,9 @@ BACKENDS: dict[str, type] = {
 def create_backend(name: str | None = None, **kwargs) -> BrowserBackend:
     """Create a browser backend by name.
 
-    Falls back to AUTOCRIT_BROWSER_BACKEND env var, then 'agent-browser'.
+    Falls back to AUTOPROTO_BROWSER_BACKEND env var, then 'agent-browser'.
     """
-    name = name or os.environ.get("AUTOCRIT_BROWSER_BACKEND", "agent-browser")
+    name = name or os.environ.get("AUTOPROTO_BROWSER_BACKEND", "agent-browser")
     cls = BACKENDS.get(name)
     if cls is None:
         available = ", ".join(BACKENDS)

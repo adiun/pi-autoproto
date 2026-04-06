@@ -453,8 +453,8 @@ def test_get_task_feedback_priority():
 # 8. Score discrepancy detection from iteration history
 # ---------------------------------------------------------------------------
 
-def test_score_discrepancy_from_autocrit_jsonl(tmp_path):
-    """When autocrit.jsonl has a higher kept score than eval_results.json, flag it."""
+def test_score_discrepancy_from_autoproto_jsonl(tmp_path):
+    """When autoproto.jsonl has a higher kept score than eval_results.json, flag it."""
     exp = tmp_path / "results" / "recipe"
     exp.mkdir(parents=True)
 
@@ -469,16 +469,16 @@ def test_score_discrepancy_from_autocrit_jsonl(tmp_path):
                    "notes": "ok", "persona_feedback": "", "wishlist": []}],
     }))
 
-    # autocrit.jsonl in project root has the actual best
-    jsonl_path = tmp_path / "autocrit.jsonl"
+    # autoproto.jsonl in project root has the actual best
+    jsonl_path = tmp_path / "autoproto.jsonl"
     lines = [
         json.dumps({"type": "config", "mode": "full", "experiment": "recipe"}),
         json.dumps({"type": "iteration", "iteration": 5, "composite": 71.4,
                     "p0": 82, "p1": 60, "p2": 48, "kept": True,
-                    "branch": "autocrit/recipe/proto-a"}),
+                    "branch": "autoproto/recipe/proto-a"}),
         json.dumps({"type": "iteration", "iteration": 6, "composite": 79.3,
                     "p0": 82, "p1": 63.3, "p2": 95, "kept": True,
-                    "branch": "autocrit/recipe/proto-a"}),
+                    "branch": "autoproto/recipe/proto-a"}),
     ]
     jsonl_path.write_text("\n".join(lines) + "\n")
 
@@ -516,13 +516,13 @@ def test_winner_uses_history_best_score(tmp_path):
                    "notes": "", "persona_feedback": "", "wishlist": []}],
     }))
 
-    # autocrit.jsonl has proto-a's actual peak at 79.3
-    jsonl_path = tmp_path / "autocrit.jsonl"
+    # autoproto.jsonl has proto-a's actual peak at 79.3
+    jsonl_path = tmp_path / "autoproto.jsonl"
     lines = [
         json.dumps({"type": "config", "mode": "full", "experiment": "recipe"}),
         json.dumps({"type": "iteration", "iteration": 6, "composite": 79.3,
                     "p0": 82, "p1": 63.3, "p2": 95, "kept": True,
-                    "branch": "autocrit/recipe/proto-a"}),
+                    "branch": "autoproto/recipe/proto-a"}),
     ]
     jsonl_path.write_text("\n".join(lines) + "\n")
 

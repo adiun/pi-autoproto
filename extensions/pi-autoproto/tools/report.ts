@@ -8,10 +8,10 @@ import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AutocritRuntime } from "../state.js";
+import type { AutoprotoRuntime } from "../state.js";
 import { buildReportCommand, getPythonDir, formatDuration, getElapsedMs } from "../utils.js";
 
-export function registerReportTool(pi: ExtensionAPI, getRuntime: () => AutocritRuntime) {
+export function registerReportTool(pi: ExtensionAPI, getRuntime: () => AutoprotoRuntime) {
 	pi.registerTool({
 		name: "generate_report",
 		label: "Generate Report",
@@ -91,7 +91,7 @@ export function registerReportTool(pi: ExtensionAPI, getRuntime: () => AutocritR
 			const runtime = getRuntime();
 			const elapsed = getElapsedMs(runtime.state);
 			if (elapsed > 0) {
-				responseText += `\n\n⏱ Total autocrit session duration: ${formatDuration(elapsed)}`;
+				responseText += `\n\n⏱ Total autoproto session duration: ${formatDuration(elapsed)}`;
 			}
 
 			return {

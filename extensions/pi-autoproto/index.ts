@@ -1,17 +1,17 @@
 /**
- * pi-autocrit — Pi Extension
+ * pi-autoproto — Pi Extension
  *
  * Persona-driven UX evaluation loop for web app prototypes.
  * Build, evaluate with synthetic users, iterate on feedback.
  *
  * Provides:
- * - `init_autocrit` tool — validates dependencies, sets up workspace
+ * - `init_autoproto` tool — validates dependencies, sets up workspace
  * - `run_evaluation` tool — wraps evaluate.py, returns structured results
  * - `log_iteration` tool — records results, manages history files
  * - `generate_report` tool — comparative synthesis across prototypes
  * - Dashboard widget showing iteration progress and scores
- * - `/autocrit` command for status and control
- * - System prompt injection with autocrit context
+ * - `/autoproto` command for status and control
+ * - System prompt injection with autoproto context
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -25,7 +25,7 @@ import {
 	latestIteration,
 	bestIteration,
 	isPlateaued,
-	type AutocritRuntime,
+	type AutoprotoRuntime,
 } from "./state.js";
 import { formatScoreLine, formatDuration, getElapsedMs } from "./utils.js";
 import { renderCompactWidget, renderExpandedWidget, renderFullscreenWidget, type IterationFeedbackData } from "./widget.js";
@@ -34,8 +34,8 @@ import { registerEvaluateTool } from "./tools/evaluate.js";
 import { registerLogTool } from "./tools/log.js";
 import { registerReportTool } from "./tools/report.js";
 
-export default function autocritExtension(pi: ExtensionAPI): void {
-	let runtime: AutocritRuntime = createRuntime();
+export default function autoprotoExtension(pi: ExtensionAPI): void {
+	let runtime: AutoprotoRuntime = createRuntime();
 	let dashboardMode: "compact" | "expanded" | "fullscreen" = "compact";
 
 	const getRuntime = () => runtime;
@@ -60,10 +60,10 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 		if (!state.active || state.iterations.length === 0) {
 			if (state.active) {
 				// Active but no iterations yet — show minimal status
-				ctx.ui.setWidget("autocrit", (_tui, theme) => {
+				ctx.ui.setWidget("autoproto", (_tui, theme) => {
 					const parts = [
 						theme.fg("accent", "🎯"),
-						theme.fg("muted", ` autocrit`),
+						theme.fg("muted", ` autoproto`),
 					];
 					if (state.experimentName) {
 						parts.push(theme.fg("dim", `: ${state.experimentName}`));
@@ -72,7 +72,7 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 					return new Text(parts.join(""), 0, 0);
 				});
 			} else {
-				ctx.ui.setWidget("autocrit", undefined);
+				ctx.ui.setWidget("autoproto", undefined);
 			}
 			return;
 		}
@@ -104,15 +104,15 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 					}
 				} catch { /* skip iterations without eval data */ }
 			}
-			ctx.ui.setWidget("autocrit", (_tui, theme) =>
+			ctx.ui.setWidget("autoproto", (_tui, theme) =>
 				renderFullscreenWidget(state, theme, feedbackData),
 			);
 		} else if (dashboardMode === "expanded") {
-			ctx.ui.setWidget("autocrit", (_tui, theme) =>
+			ctx.ui.setWidget("autoproto", (_tui, theme) =>
 				renderExpandedWidget(state, theme),
 			);
 		} else {
-			ctx.ui.setWidget("autocrit", (_tui, theme) =>
+			ctx.ui.setWidget("autoproto", (_tui, theme) =>
 				renderCompactWidget(state, theme),
 			);
 		}
@@ -123,7 +123,7 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 	// -------------------------------------------------------------------
 
 	pi.registerShortcut("ctrl+x", {
-		description: "Cycle autocrit dashboard: compact → expanded → feedback → compact",
+		description: "Cycle autoproto dashboard: compact → expanded → feedback → compact",
 		handler: async (ctx) => {
 			if (!runtime.state.active) return;
 			const modes = ["compact", "expanded", "fullscreen"] as const;
@@ -134,31 +134,31 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 	});
 
 	// -------------------------------------------------------------------
-	// /autocrit command
+	// /autoproto command
 	// -------------------------------------------------------------------
 
-	pi.registerCommand("autocrit", {
-		description: "Autocrit status and control (start/status/off)",
+	pi.registerCommand("autoproto", {
+		description: "Autoproto status and control (start/status/off)",
 		handler: async (args, ctx) => {
 			const subcommand = args?.trim().toLowerCase();
 
 			if (subcommand === "off") {
 				runtime.state.active = false;
-				ctx.ui.setWidget("autocrit", undefined);
-				ctx.ui.setStatus("autocrit", undefined);
-				ctx.ui.notify("Autocrit mode disabled.", "info");
+				ctx.ui.setWidget("autoproto", undefined);
+				ctx.ui.setStatus("autoproto", undefined);
+				ctx.ui.notify("Autoproto mode disabled.", "info");
 				return;
 			}
 
 			if (subcommand === "start") {
-				ctx.ui.notify("Use /skill:autocrit to start a new autocrit session, or call init_autocrit.", "info");
+				ctx.ui.notify("Use /skill:autoproto to start a new autoproto session, or call init_autoproto.", "info");
 				return;
 			}
 
 			// Default: show status
 			const state = runtime.state;
 			if (!state.active) {
-				ctx.ui.notify("Autocrit is not active. Use /skill:autocrit or init_autocrit to start.", "info");
+				ctx.ui.notify("Autoproto is not active. Use /skill:autoproto or init_autoproto to start.", "info");
 				return;
 			}
 
@@ -166,7 +166,7 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 			const latest = latestIteration(state);
 			const best = bestIteration(state);
 
-			let status = `Autocrit: ${state.experimentName ?? "unnamed"} (${state.mode} mode)\n`;
+			let status = `Autoproto: ${state.experimentName ?? "unnamed"} (${state.mode} mode)\n`;
 			status += `Branch: ${state.currentBranch ?? "—"}\n`;
 			status += `Iterations: ${iters.length} (${iters.filter((r) => r.kept).length} kept)\n`;
 
@@ -194,10 +194,10 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 		const state = runtime.state;
 		const latest = latestIteration(state);
 
-		let extra = "\n\n## Autocrit Mode (ACTIVE)";
-		extra += "\nYou are in autocrit mode — iterating on a web app prototype with persona-driven evaluation.";
-		extra += "\nUse init_autocrit, run_evaluation, log_iteration, and generate_report tools.";
-		extra += "\nRead the autocrit skill (/skill:autocrit) for the full workflow.";
+		let extra = "\n\n## Autoproto Mode (ACTIVE)";
+		extra += "\nYou are in autoproto mode — iterating on a web app prototype with persona-driven evaluation.";
+		extra += "\nUse init_autoproto, run_evaluation, log_iteration, and generate_report tools.";
+		extra += "\nRead the autoproto skill (/skill:autoproto) for the full workflow.";
 
 		if (latest) {
 			extra += `\n\nCurrent state: iteration ${latest.iteration}, ${state.currentBranch ?? "—"}, composite ${latest.composite.toFixed(1)}`;
@@ -246,7 +246,7 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 	// Update status in footer
 	pi.on("turn_end", async (_event, ctx) => {
 		if (!runtime.state.active) {
-			ctx.ui.setStatus("autocrit", undefined);
+			ctx.ui.setStatus("autoproto", undefined);
 			return;
 		}
 
@@ -256,11 +256,11 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 		if (latest) {
 			const plateauFlag = isPlateaued(runtime.state) ? " ⚠️" : "";
 			ctx.ui.setStatus(
-				"autocrit",
+				"autoproto",
 				ctx.ui.theme.fg("accent", `🎯 iter ${latest.iteration} │ ${latest.composite.toFixed(1)}${plateauFlag}${timeStr}`),
 			);
 		} else {
-			ctx.ui.setStatus("autocrit", ctx.ui.theme.fg("dim", `🎯 autocrit${timeStr}`));
+			ctx.ui.setStatus("autoproto", ctx.ui.theme.fg("dim", `🎯 autoproto${timeStr}`));
 		}
 	});
 
@@ -271,7 +271,7 @@ export default function autocritExtension(pi: ExtensionAPI): void {
 			runtime.devServerPort = null;
 			runtime.devServerCleanup = null;
 		}
-		ctx.ui.setWidget("autocrit", undefined);
-		ctx.ui.setStatus("autocrit", undefined);
+		ctx.ui.setWidget("autoproto", undefined);
+		ctx.ui.setStatus("autoproto", undefined);
 	});
 }

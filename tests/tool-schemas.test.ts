@@ -9,12 +9,12 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert";
 import { createMockPi, type MockPi } from "./mock-pi.js";
-import { createRuntime, type AutocritRuntime } from "../extensions/pi-autocrit/state.js";
-import { registerEvaluateTool } from "../extensions/pi-autocrit/tools/evaluate.js";
-import { registerLogTool } from "../extensions/pi-autocrit/tools/log.js";
+import { createRuntime, type AutoprotoRuntime } from "../extensions/pi-autoproto/state.js";
+import { registerEvaluateTool } from "../extensions/pi-autoproto/tools/evaluate.js";
+import { registerLogTool } from "../extensions/pi-autoproto/tools/log.js";
 
 let mock: MockPi;
-let runtime: AutocritRuntime;
+let runtime: AutoprotoRuntime;
 
 beforeEach(() => {
 	mock = createMockPi();

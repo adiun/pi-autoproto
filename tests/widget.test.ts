@@ -4,13 +4,13 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { renderCompactWidget, renderExpandedWidget, renderFullscreenWidget, type IterationFeedbackData } from "../extensions/pi-autocrit/widget.js";
-import { createState, type AutocritState, type IterationResult } from "../extensions/pi-autocrit/state.js";
+import { renderCompactWidget, renderExpandedWidget, renderFullscreenWidget, type IterationFeedbackData } from "../extensions/pi-autoproto/widget.js";
+import { createState, type AutoprotoState, type IterationResult } from "../extensions/pi-autoproto/state.js";
 import { createMockTheme } from "./mock-pi.js";
 
 const theme = createMockTheme();
 
-function makeState(iters: Partial<IterationResult>[]): AutocritState {
+function makeState(iters: Partial<IterationResult>[]): AutoprotoState {
 	const state = createState();
 	state.active = true;
 	state.experimentName = "test-exp";

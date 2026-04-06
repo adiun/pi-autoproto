@@ -13,12 +13,12 @@ import {
 	recomputeScores, mergeTaskResult, readEvalResults, computeTaskTimeoutMs,
 	DEFAULT_MAX_STEPS, QUICK_MAX_STEPS, MAX_TASK_TIMEOUT_MS, TIMEOUT_PER_STEP_MS, TASK_OVERHEAD_MS,
 	type EvalResultsJson, type TaskResultJson,
-} from "../extensions/pi-autocrit/evaluate-logic.js";
+} from "../extensions/pi-autoproto/evaluate-logic.js";
 
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "autocrit-eval-test-"));
+	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "autoproto-eval-test-"));
 });
 
 afterEach(() => {

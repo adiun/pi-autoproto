@@ -1,10 +1,10 @@
 /**
- * Dashboard widget rendering for pi-autocrit.
+ * Dashboard widget rendering for pi-autoproto.
  */
 
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import type { AutocritState, IterationResult } from "./state.js";
+import type { AutoprotoState, IterationResult } from "./state.js";
 import { currentBranchIterations, bestIteration, taskScoreStats } from "./state.js";
 import { formatDuration, getElapsedMs, sparkline } from "./utils.js";
 
@@ -31,7 +31,7 @@ export interface IterationFeedbackData {
 // Compact one-liner widget
 // ---------------------------------------------------------------------------
 
-export function renderCompactWidget(state: AutocritState, theme: Theme): Text {
+export function renderCompactWidget(state: AutoprotoState, theme: Theme): Text {
 	const iters = currentBranchIterations(state);
 	const best = bestIteration(state);
 	const latest = iters.length > 0 ? iters[iters.length - 1] : null;
@@ -87,12 +87,12 @@ export function renderCompactWidget(state: AutocritState, theme: Theme): Text {
 // Expanded dashboard
 // ---------------------------------------------------------------------------
 
-function renderExpandedLines(state: AutocritState, theme: Theme, hint: string): string[] {
+function renderExpandedLines(state: AutoprotoState, theme: Theme, hint: string): string[] {
 	const width = process.stdout.columns || 120;
 	const lines: string[] = [];
 
 	// ── Header bar ──────────────────────────────────────────────────────
-	const label = `🎯 autocrit${state.experimentName ? `: ${state.experimentName}` : ""}`;
+	const label = `🎯 autoproto${state.experimentName ? `: ${state.experimentName}` : ""}`;
 	const fillLen = Math.max(0, width - 3 - 1 - label.length - 1 - hint.length);
 	lines.push(
 		truncateToWidth(
@@ -256,7 +256,7 @@ function renderExpandedLines(state: AutocritState, theme: Theme, hint: string): 
 // Expanded dashboard
 // ---------------------------------------------------------------------------
 
-export function renderExpandedWidget(state: AutocritState, theme: Theme): Text {
+export function renderExpandedWidget(state: AutoprotoState, theme: Theme): Text {
 	const lines = renderExpandedLines(state, theme, " ctrl+x detail ");
 	return new Text(lines.join("\n"), 0, 0);
 }
@@ -266,7 +266,7 @@ export function renderExpandedWidget(state: AutocritState, theme: Theme): Text {
 // ---------------------------------------------------------------------------
 
 export function renderFullscreenWidget(
-	state: AutocritState,
+	state: AutoprotoState,
 	theme: Theme,
 	feedbackData: IterationFeedbackData[],
 ): Text {

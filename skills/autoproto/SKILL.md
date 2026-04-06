@@ -1,26 +1,26 @@
 ---
-name: autocrit
+name: autoproto
 description: >
   Persona-driven UX evaluation for web app prototypes. Builds prototypes,
   evaluates with synthetic users via agent-browser, and iterates based on
   structured feedback. Supports full mode (3 prototypes with comparative
   evaluation) or quick mode (single prototype). Use when building and
-  evaluating web app prototypes, or when asked to "run autocrit", "evaluate
+  evaluating web app prototypes, or when asked to "run autoproto", "evaluate
   this app with personas", or "set up UX testing".
 ---
 
-# Autocrit
+# Autoproto
 
 Persona-driven UX evaluation loop: build a prototype, let a synthetic user try it, iterate on their feedback, repeat.
 
 ## Tools
 
-- **`init_autocrit`** — validate dependencies, set mode (full/quick), experiment name, persona command
+- **`init_autoproto`** — validate dependencies, set mode (full/quick), experiment name, persona command
 - **`run_evaluation`** — run persona agent against the app, get structured scores and feedback
 - **`log_iteration`** — record results, manage history, detect plateaus
 - **`generate_report`** — comparative synthesis across prototypes (full mode only)
 
-Dashboard: `ctrl+x` to expand/collapse. `/autocrit` for status.
+Dashboard: `ctrl+x` to expand/collapse. `/autoproto` for status.
 
 ### Evaluation Discipline
 
@@ -28,7 +28,7 @@ Dashboard: `ctrl+x` to expand/collapse. `/autocrit` for status.
 - **Always run all tasks.** Never filter by tier. Tier-filtered evaluations produce misleading composite scores (unrun tiers show as 0).
 - **Task filter is for debugging only.** Only use the `task` parameter after a full evaluation has identified a specific stuck task you need to investigate.
 - **Stuck tasks are surfaced automatically.** If `log_iteration` flags a task as structurally untestable (scored 0 in 3+ consecutive kept iterations with step-limit stuck points), investigate with the `task` parameter and a higher `max_steps`. If the task passes with more steps, add `max_steps` to the task definition in persona.md. If it still fails, the task may need to be redesigned or marked as blocked.
-- **Blocked tasks are excluded from scoring.** Tasks marked as blocked in the autocrit state are still evaluated for feedback but excluded from the composite score. This prevents a single untestable task from capping the composite at 40.
+- **Blocked tasks are excluded from scoring.** Tasks marked as blocked in the autoproto state are still evaluated for feedback but excluded from the composite score. This prevents a single untestable task from capping the composite at 40.
 - **Bundle independent fixes.** If multiple failing tasks have independent fixes (e.g., add a nav item AND move a button), address them in one iteration. The keep/discard protocol handles failure — revert the whole bundle.
 - **Timeouts are not failures.** If a task times out with no feedback, it's an infrastructure issue (LLM latency, agent-browser). Do not re-run. Log the iteration and move on.
 - **Faster iteration with cheaper models.** For faster evaluation cycles, consider using a cheaper/faster model for the persona agent (e.g., `--cmd "claude -p --model haiku"`). The persona agent navigates and clicks — it doesn't need the most capable model.
@@ -38,7 +38,7 @@ Dashboard: `ctrl+x` to expand/collapse. `/autocrit` for status.
 ## Quick Start
 
 1. Create `persona.md` (see [persona guide](references/examples/persona_example.md))
-2. `init_autocrit` — set mode, experiment name, persona command
+2. `init_autoproto` — set mode, experiment name, persona command
 3. Build seed app (Vite project with `.gitignore`)
 4. `run_evaluation` with mode `quick` for baseline
 5. Iterate: edit → `run_evaluation` → `log_iteration` → repeat
@@ -134,7 +134,7 @@ Check for these files:
 
 Ask the user: "Full experience (3 prototypes, comparative evaluation) or quick single prototype?"
 
-Call `init_autocrit` with mode, experiment name, and persona command.
+Call `init_autoproto` with mode, experiment name, and persona command.
 
 Determine the persona agent command: use `--cmd` with your own CLI. For example, if you are Claude Code, use `claude -p`. If you are pi, use `pi -p`. Ask the user if they want a different LLM.
 
@@ -161,13 +161,13 @@ For each approach:
 ### 5. Create Branches
 
 **Full mode:**
-1. Create branches: `autocrit/<experiment>/proto-a`, `proto-b`, `proto-c`
+1. Create branches: `autoproto/<experiment>/proto-a`, `proto-b`, `proto-c`
 2. Write `approach.md` on each branch
 3. Copy `persona.md`, `requirements.md`, `hypotheses.md` to each branch
 
 **Quick mode:**
 1. Pick the most promising approach
-2. Create branch: `autocrit/<short-tag>`
+2. Create branch: `autoproto/<short-tag>`
 3. Write `approach.md`
 
 Show approaches to user and confirm.
@@ -260,7 +260,7 @@ Present to the user: comparative report, recommendations, bias flags.
 
 ## Constraints
 
-- **Browser backends.** Two backends are available, set via `init_autocrit`:
+- **Browser backends.** Two backends are available, set via `init_autoproto`:
   - **agent-browser** (default) — vision mode with annotated screenshots. The persona sees numbered labels on interactive elements. Design for visual quality: layout, color, typography, whitespace matter. Don't shrink text for density — the vision agent penalizes small text (keep font sizes ≥ 13px body, ≥ 11px labels).
   - **playwright-cli** — text/snapshot mode using Playwright's accessibility tree. The persona sees structured text, not pixels. Better for apps with modals/overlays. Lower token cost, no vision model needed. Visual polish matters less; semantic structure and ARIA roles matter more.
 - **Use Vite+ for all apps.** `package.json` with `vite-plus`, `vite.config.js`. Install with `pnpm install` or `npm install`.

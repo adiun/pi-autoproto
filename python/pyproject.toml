@@ -1,5 +1,5 @@
 [project]
-name = "pi-autocrit-eval"
+name = "pi-autoproto-eval"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = []

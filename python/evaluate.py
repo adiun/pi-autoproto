@@ -137,14 +137,14 @@ def _detect_modal_ref(snapshot: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def llm(prompt: str) -> str:
-    """Send prompt to LLM via AUTOCRIT_EVAL_CMD. Returns response text."""
-    cmd = os.environ.get("AUTOCRIT_EVAL_CMD")
+    """Send prompt to LLM via AUTOPROTO_EVAL_CMD. Returns response text."""
+    cmd = os.environ.get("AUTOPROTO_EVAL_CMD")
     if not cmd:
         print("Error: No persona agent command configured.", file=sys.stderr)
         print("Options:", file=sys.stderr)
         print('  uv run evaluate.py --cmd "claude -p"', file=sys.stderr)
-        print('  export AUTOCRIT_EVAL_CMD="claude -p"', file=sys.stderr)
-        print("  echo 'AUTOCRIT_EVAL_CMD=\"claude -p\"' > .env", file=sys.stderr)
+        print('  export AUTOPROTO_EVAL_CMD="claude -p"', file=sys.stderr)
+        print("  echo 'AUTOPROTO_EVAL_CMD=\"claude -p\"' > .env", file=sys.stderr)
         sys.exit(1)
 
     cmd_parts = shlex.split(cmd)
@@ -158,7 +158,7 @@ def llm(prompt: str) -> str:
         )
     except FileNotFoundError:
         print(f"Error: Command not found: {cmd_parts[0]}", file=sys.stderr)
-        print(f"Is it installed? AUTOCRIT_EVAL_CMD={cmd}", file=sys.stderr)
+        print(f"Is it installed? AUTOPROTO_EVAL_CMD={cmd}", file=sys.stderr)
         sys.exit(1)
     except subprocess.TimeoutExpired:
         raise RuntimeError("LLM command timed out after 120s")
@@ -263,7 +263,7 @@ def _capture_annotated_screenshot(step: int) -> tuple[str, str]:
     The legend maps [N] labels to element roles/names.
     """
     assert _browser is not None
-    path = f"/tmp/autocrit_vision_step_{step}.png"
+    path = f"/tmp/autoproto_vision_step_{step}.png"
     return _browser.screenshot_annotated(path)
 
 
@@ -1202,7 +1202,7 @@ def main() -> None:
     parser.add_argument("--quiet", action="store_true", help="Only print results block")
     parser.add_argument("--cmd", type=str, default=None,
         help="LLM command for persona agent (e.g. 'claude -p'). "
-             "Falls back to AUTOCRIT_EVAL_CMD env var, then .env file.")
+             "Falls back to AUTOPROTO_EVAL_CMD env var, then .env file.")
     parser.add_argument("--snapshot-flags", type=str, default="-c",
         help="Flags for agent-browser snapshot (default: '-c')")
     parser.add_argument("--max-snapshot", type=int, default=25_000,
@@ -1237,7 +1237,7 @@ def main() -> None:
         help="Number of persona variants to auto-generate and evaluate (0 = single persona, no variants)")
     parser.add_argument("--browser-backend", type=str, default=None,
         help="Browser backend: 'agent-browser' (default) or 'playwright-cli'. "
-             "Falls back to AUTOCRIT_BROWSER_BACKEND env var.")
+             "Falls back to AUTOPROTO_BROWSER_BACKEND env var.")
     parser.add_argument("--post-eval", action="store_true",
         help="Run exploratory tasks and session wishlist after core tasks. "
              "Reads core results from eval_results.json in --output-dir. "
@@ -1262,7 +1262,7 @@ def main() -> None:
     if args.text:
         args.vision = False
 
-    # Load .env early so ANTHROPIC_API_KEY and AUTOCRIT_EVAL_CMD are available
+    # Load .env early so ANTHROPIC_API_KEY and AUTOPROTO_EVAL_CMD are available
     _load_env_file()
 
     # Create browser backend
@@ -1275,13 +1275,13 @@ def main() -> None:
 
     # Resolve persona agent command
     if args.cmd:
-        os.environ["AUTOCRIT_EVAL_CMD"] = args.cmd
-    if not os.environ.get("AUTOCRIT_EVAL_CMD"):
+        os.environ["AUTOPROTO_EVAL_CMD"] = args.cmd
+    if not os.environ.get("AUTOPROTO_EVAL_CMD"):
         print("Error: No persona agent command configured.", file=sys.stderr)
         print("Options:", file=sys.stderr)
         print('  uv run evaluate.py --cmd "claude -p"', file=sys.stderr)
-        print('  export AUTOCRIT_EVAL_CMD="claude -p"', file=sys.stderr)
-        print("  echo 'AUTOCRIT_EVAL_CMD=\"claude -p\"' > .env", file=sys.stderr)
+        print('  export AUTOPROTO_EVAL_CMD="claude -p"', file=sys.stderr)
+        print("  echo 'AUTOPROTO_EVAL_CMD=\"claude -p\"' > .env", file=sys.stderr)
         sys.exit(1)
 
     if not shutil.which(_browser.name):

@@ -1,11 +1,11 @@
 /**
- * Utility helpers for pi-autocrit.
+ * Utility helpers for pi-autoproto.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AutocritState, IterationResult } from "./state.js";
+import type { AutoprotoState, IterationResult } from "./state.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -179,7 +179,7 @@ export function formatDependencyReport(deps: DependencyStatus): string {
 				lines.push("  agent-browser: npm install -g agent-browser && agent-browser install");
 			}
 		} else if (deps.browserBackendName === "playwright-cli" && !deps.browserChromiumInstalled) {
-			lines.push("  chromium: init_autocrit will auto-install, or manually:");
+			lines.push("  chromium: init_autoproto will auto-install, or manually:");
 			lines.push("    CLI_PKG=$(node -e \"console.log(require.resolve('@playwright/cli/package.json'))\")");
 			lines.push("    node $(dirname $CLI_PKG)/node_modules/playwright/cli.js install chromium");
 		}
@@ -414,7 +414,7 @@ export function formatDuration(ms: number): string {
 /**
  * Get elapsed milliseconds since session start. Returns 0 if no startTime.
  */
-export function getElapsedMs(state: AutocritState): number {
+export function getElapsedMs(state: AutoprotoState): number {
 	if (!state.startTime) return 0;
 	return Date.now() - state.startTime;
 }
@@ -423,7 +423,7 @@ export function getElapsedMs(state: AutocritState): number {
 // Score formatting
 // ---------------------------------------------------------------------------
 
-export function formatScoreLine(state: AutocritState): string {
+export function formatScoreLine(state: AutoprotoState): string {
 	const iters = state.iterations.filter((r) => r.branch === state.currentBranch);
 	if (iters.length === 0) return "no iterations yet";
 

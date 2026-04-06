@@ -39,14 +39,14 @@ def _load_env_file() -> None:
 
 
 def _llm(prompt: str) -> str:
-    """Send prompt to LLM via AUTOCRIT_EVAL_CMD. Returns response text."""
+    """Send prompt to LLM via AUTOPROTO_EVAL_CMD. Returns response text."""
     import shlex
     import subprocess
 
-    cmd = os.environ.get("AUTOCRIT_EVAL_CMD")
+    cmd = os.environ.get("AUTOPROTO_EVAL_CMD")
     if not cmd:
         print("Error: No persona agent command configured.", file=sys.stderr)
-        print('Use --cmd "claude -p" or set AUTOCRIT_EVAL_CMD', file=sys.stderr)
+        print('Use --cmd "claude -p" or set AUTOPROTO_EVAL_CMD', file=sys.stderr)
         sys.exit(1)
 
     cmd_parts = shlex.split(cmd)
@@ -236,7 +236,7 @@ def main() -> None:
     parser.add_argument("--app", type=str, required=True,
         help="Short description of the app being built (e.g. 'tip calculator for restaurant servers')")
     parser.add_argument("--cmd", type=str, default=None,
-        help="LLM command for persona agent (e.g. 'claude -p'). Falls back to AUTOCRIT_EVAL_CMD.")
+        help="LLM command for persona agent (e.g. 'claude -p'). Falls back to AUTOPROTO_EVAL_CMD.")
     parser.add_argument("--write", action="store_true",
         help="Append generated tasks to persona.md instead of printing to stdout")
     parser.add_argument("--json", action="store_true",
@@ -246,7 +246,7 @@ def main() -> None:
     _load_env_file()
 
     if args.cmd:
-        os.environ["AUTOCRIT_EVAL_CMD"] = args.cmd
+        os.environ["AUTOPROTO_EVAL_CMD"] = args.cmd
 
     if not os.path.exists(args.persona):
         print(f"Error: {args.persona} not found.", file=sys.stderr)

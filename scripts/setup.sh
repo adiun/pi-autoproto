@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# pi-autocrit dependency checker and installer
+# pi-autoproto dependency checker and installer
 # Run this to verify all required dependencies are available.
 
-echo "Checking pi-autocrit dependencies..."
+echo "Checking pi-autoproto dependencies..."
 echo ""
 
 MISSING=0
@@ -18,7 +18,7 @@ else
 fi
 
 # Browser backend (agent-browser or playwright-cli)
-BROWSER_BACKEND=${AUTOCRIT_BROWSER_BACKEND:-agent-browser}
+BROWSER_BACKEND=${AUTOPROTO_BROWSER_BACKEND:-agent-browser}
 if [ "$BROWSER_BACKEND" = "playwright-cli" ]; then
     if command -v playwright-cli &>/dev/null; then
         echo "✅ playwright-cli"
@@ -67,7 +67,7 @@ else
     fi
     # Also check if playwright-cli is available as an alternative
     if command -v playwright-cli &>/dev/null; then
-        echo "ℹ️  playwright-cli also available (use AUTOCRIT_BROWSER_BACKEND=playwright-cli to switch)"
+        echo "ℹ️  playwright-cli also available (use AUTOPROTO_BROWSER_BACKEND=playwright-cli to switch)"
     fi
 fi
 
@@ -105,13 +105,13 @@ echo ""
 if [ $MISSING -eq 0 ]; then
     echo "All dependencies satisfied! ✅"
     echo ""
-    echo "To use pi-autocrit:"
-    echo "  pi install /path/to/pi-autocrit"
+    echo "To use pi-autoproto:"
+    echo "  pi install /path/to/pi-autoproto"
     echo "  # or"
-    echo "  pi -e /path/to/pi-autocrit"
+    echo "  pi -e /path/to/pi-autoproto"
     echo ""
     echo "Then in pi:"
-    echo "  /skill:autocrit"
+    echo "  /skill:autoproto"
 else
     echo "Some dependencies are missing. Install them and run this script again."
     exit 1

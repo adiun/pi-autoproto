@@ -1,8 +1,8 @@
 /**
- * State management for pi-autocrit.
+ * State management for pi-autoproto.
  *
  * Tracks experiment mode, prototype branches, iteration history,
- * and scores. Persists to autocrit.jsonl for cross-session continuity.
+ * and scores. Persists to autoproto.jsonl for cross-session continuity.
  */
 
 import * as fs from "node:fs";
@@ -12,7 +12,7 @@ import * as path from "node:path";
 // Types
 // ---------------------------------------------------------------------------
 
-export type AutocritMode = "full" | "quick";
+export type AutoprotoMode = "full" | "quick";
 
 export interface IterationResult {
 	iteration: number;
@@ -37,11 +37,11 @@ export interface TaskScoreEntry {
 	branch: string;
 }
 
-export interface AutocritState {
-	/** Whether autocrit mode is active */
+export interface AutoprotoState {
+	/** Whether autoproto mode is active */
 	active: boolean;
 	/** full (3 prototypes) or quick (single) */
-	mode: AutocritMode;
+	mode: AutoprotoMode;
 	/** Short experiment name, e.g. "tipcalc" */
 	experimentName: string | null;
 	/** Command to use for persona agent, e.g. "claude -p" */
@@ -54,7 +54,7 @@ export interface AutocritState {
 	iterations: IterationResult[];
 	/** Results directory base */
 	resultsDir: string | null;
-	/** Timestamp (ms) when the autocrit session was started */
+	/** Timestamp (ms) when the autoproto session was started */
 	startTime: number | null;
 	/** Per-task score history for variance tracking and stuck detection */
 	taskScores: TaskScoreEntry[];
@@ -64,8 +64,8 @@ export interface AutocritState {
 	maxIterationsPerPrototype: number;
 }
 
-export interface AutocritRuntime {
-	state: AutocritState;
+export interface AutoprotoRuntime {
+	state: AutoprotoState;
 	/** Port of the cached dev server (reused across evaluations) */
 	devServerPort: number | null;
 	/** Cleanup function for the cached dev server */
@@ -76,7 +76,7 @@ export interface AutocritRuntime {
 // Defaults
 // ---------------------------------------------------------------------------
 
-export function createState(): AutocritState {
+export function createState(): AutoprotoState {
 	return {
 		active: false,
 		mode: "quick",
@@ -93,7 +93,7 @@ export function createState(): AutocritState {
 	};
 }
 
-export function createRuntime(): AutocritRuntime {
+export function createRuntime(): AutoprotoRuntime {
 	return {
 		state: createState(),
 		devServerPort: null,
@@ -102,14 +102,14 @@ export function createRuntime(): AutocritRuntime {
 }
 
 // ---------------------------------------------------------------------------
-// Persistence — autocrit.jsonl
+// Persistence — autoproto.jsonl
 // ---------------------------------------------------------------------------
 
 export function getJsonlPath(cwd: string): string {
-	return path.join(cwd, "autocrit.jsonl");
+	return path.join(cwd, "autoproto.jsonl");
 }
 
-export function writeConfig(cwd: string, state: AutocritState): void {
+export function writeConfig(cwd: string, state: AutoprotoState): void {
 	const jsonlPath = getJsonlPath(cwd);
 	const config = JSON.stringify({
 		type: "config",
@@ -145,7 +145,7 @@ export function appendTaskScores(cwd: string, entries: TaskScoreEntry[]): void {
 	}
 }
 
-export function reconstructState(cwd: string): AutocritState {
+export function reconstructState(cwd: string): AutoprotoState {
 	const state = createState();
 	const jsonlPath = getJsonlPath(cwd);
 
@@ -205,23 +205,23 @@ export function reconstructState(cwd: string): AutocritState {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function currentBranchIterations(state: AutocritState): IterationResult[] {
+export function currentBranchIterations(state: AutoprotoState): IterationResult[] {
 	if (!state.currentBranch) return state.iterations;
 	return state.iterations.filter((r) => r.branch === state.currentBranch);
 }
 
-export function latestIteration(state: AutocritState): IterationResult | null {
+export function latestIteration(state: AutoprotoState): IterationResult | null {
 	const iters = currentBranchIterations(state);
 	return iters.length > 0 ? iters[iters.length - 1] : null;
 }
 
-export function bestIteration(state: AutocritState): IterationResult | null {
+export function bestIteration(state: AutoprotoState): IterationResult | null {
 	const kept = currentBranchIterations(state).filter((r) => r.kept);
 	if (kept.length === 0) return null;
 	return kept.reduce((best, r) => (r.composite > best.composite ? r : best));
 }
 
-export function isPlateaued(state: AutocritState): boolean {
+export function isPlateaued(state: AutoprotoState): boolean {
 	const kept = currentBranchIterations(state).filter((r) => r.kept);
 	if (kept.length < 4) return false;
 	const last3 = kept.slice(-3);
@@ -234,7 +234,7 @@ export function isPlateaued(state: AutocritState): boolean {
 // ---------------------------------------------------------------------------
 
 /** Get score history for a specific task on the current branch. */
-export function taskScoreHistory(state: AutocritState, taskNumber: number): TaskScoreEntry[] {
+export function taskScoreHistory(state: AutoprotoState, taskNumber: number): TaskScoreEntry[] {
 	const branch = state.currentBranch;
 	return state.taskScores.filter((e) =>
 		e.taskNumber === taskNumber && (!branch || e.branch === branch),
@@ -242,7 +242,7 @@ export function taskScoreHistory(state: AutocritState, taskNumber: number): Task
 }
 
 /** Detect structurally stuck tasks: scored 0 in N+ consecutive kept iterations with step-limit stuck points. */
-export function detectStuckTasks(state: AutocritState, minConsecutive: number = 3): Array<{ taskNumber: number; taskName: string; tier: string; consecutiveZeros: number }> {
+export function detectStuckTasks(state: AutoprotoState, minConsecutive: number = 3): Array<{ taskNumber: number; taskName: string; tier: string; consecutiveZeros: number }> {
 	const keptIters = currentBranchIterations(state).filter((r) => r.kept);
 	if (keptIters.length < minConsecutive) return [];
 
@@ -282,7 +282,7 @@ export function detectStuckTasks(state: AutocritState, minConsecutive: number = 
 }
 
 /** Compute per-task score statistics (mean, stdev, range) for variance tracking. */
-export function taskScoreStats(state: AutocritState, taskNumber: number): {
+export function taskScoreStats(state: AutoprotoState, taskNumber: number): {
 	mean: number;
 	stdev: number;
 	min: number;
@@ -305,7 +305,7 @@ export function taskScoreStats(state: AutocritState, taskNumber: number): {
 }
 
 /** Compute composite score stdev across iterations on current branch. */
-export function compositeScoreStats(state: AutocritState): { mean: number; stdev: number; count: number } | null {
+export function compositeScoreStats(state: AutoprotoState): { mean: number; stdev: number; count: number } | null {
 	const iters = currentBranchIterations(state);
 	if (iters.length < 3) return null;
 	const scores = iters.map((r) => r.composite);

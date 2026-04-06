@@ -11,13 +11,13 @@ import {
 	createState, createRuntime, writeConfig, reconstructState,
 	appendIteration, appendTaskScores, currentBranchIterations, latestIteration,
 	bestIteration, isPlateaued, detectStuckTasks, taskScoreStats, taskScoreHistory,
-	compositeScoreStats, type AutocritState, type IterationResult, type TaskScoreEntry,
-} from "../extensions/pi-autocrit/state.js";
+	compositeScoreStats, type AutoprotoState, type IterationResult, type TaskScoreEntry,
+} from "../extensions/pi-autoproto/state.js";
 
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "autocrit-test-"));
+	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "autoproto-test-"));
 });
 
 afterEach(() => {
@@ -116,7 +116,7 @@ describe("reconstructState edge cases", () => {
 	});
 
 	it("skips malformed lines", () => {
-		const jsonlPath = path.join(tmpDir, "autocrit.jsonl");
+		const jsonlPath = path.join(tmpDir, "autoproto.jsonl");
 		fs.writeFileSync(jsonlPath, [
 			'{"type":"config","mode":"quick","experiment":"test"}',
 			"this is not json",

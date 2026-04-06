@@ -1,4 +1,4 @@
-"""Shared fixtures for autocrit tests."""
+"""Shared fixtures for autoproto tests."""
 
 import json
 import os
@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from persona_parser import Persona, PersonaTask, PersonaVariant, TaskResult
 
 
-EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "skills", "autocrit", "references", "examples")
+EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "skills", "autoproto", "references", "examples")
 
 
 @pytest.fixture

@@ -1,5 +1,5 @@
 /**
- * init_autocrit tool — validates dependencies and initializes workspace.
+ * init_autoproto tool — validates dependencies and initializes workspace.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -8,20 +8,20 @@ import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createState, reconstructState, writeConfig, type AutocritRuntime, type AutocritState } from "../state.js";
+import { createState, reconstructState, writeConfig, type AutoprotoRuntime, type AutoprotoState } from "../state.js";
 import { checkDependencies, formatDependencyReport, getPythonDir, installPlaywrightChromium } from "../utils.js";
 
-export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRuntime) {
+export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutoprotoRuntime) {
 	pi.registerTool({
-		name: "init_autocrit",
-		label: "Init Autocrit",
+		name: "init_autoproto",
+		label: "Init Autoproto",
 		description:
-			"Initialize an autocrit evaluation session. Validates dependencies (browser backend, uv/python, git), " +
+			"Initialize an autoproto evaluation session. Validates dependencies (browser backend, uv/python, git), " +
 			"creates results directory structure, and sets up experiment state. Call once before starting the evaluation loop.",
-		promptSnippet: "Initialize autocrit session (mode, experiment name, persona command). Call once before evaluating.",
+		promptSnippet: "Initialize autoproto session (mode, experiment name, persona command). Call once before evaluating.",
 		promptGuidelines: [
-			"Call init_autocrit once at the start of an autocrit session, before calling run_evaluation.",
-			"If autocrit.jsonl already exists, init_autocrit will resume from existing state.",
+			"Call init_autoproto once at the start of an autoproto session, before calling run_evaluation.",
+			"If autoproto.jsonl already exists, init_autoproto will resume from existing state.",
 			"The persona_cmd specifies which LLM CLI to use for the persona agent (e.g. 'claude -p', 'pi -p').",
 		],
 		parameters: Type.Object({
@@ -95,7 +95,7 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 			const personaPath = path.join(ctx.cwd, "persona.md");
 			if (!fs.existsSync(personaPath)) {
 				return {
-					content: [{ type: "text", text: "❌ persona.md not found in the current directory.\n\nCreate a persona.md first. Read the autocrit skill for instructions, or see the example at references/examples/persona_example.md." }],
+					content: [{ type: "text", text: "❌ persona.md not found in the current directory.\n\nCreate a persona.md first. Read the autoproto skill for instructions, or see the example at references/examples/persona_example.md." }],
 					details: {},
 				};
 			}
@@ -119,7 +119,7 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 				state.startTime = Date.now();
 			}
 
-			// Reuse existing iterations and task scores from autocrit.jsonl
+			// Reuse existing iterations and task scores from autoproto.jsonl
 			if (existingState.active && existingState.iterations.length > 0) {
 				state.iterations = existingState.iterations;
 			}
@@ -150,7 +150,7 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 				fs.writeFileSync(gitignorePath, "node_modules/\ndist/\n.DS_Store\n");
 			}
 
-			// Write config to autocrit.jsonl
+			// Write config to autoproto.jsonl
 			writeConfig(ctx.cwd, state);
 
 			// Build response
@@ -165,7 +165,7 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 			}
 			runtime.lastCwd = ctx.cwd;
 
-			let response = `✅ Autocrit initialized: "${params.experiment_name}"\n`;
+			let response = `✅ Autoproto initialized: "${params.experiment_name}"\n`;
 			response += `Mode: ${params.mode}\n`;
 			response += `Browser: ${state.browserBackend}`;
 			if (backendAutoSwitched) {
@@ -186,7 +186,7 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 				response += "Next steps:\n";
 				response += "1. Read persona.md and any requirements.md/hypotheses.md\n";
 				response += "2. Brainstorm 3 different UX approaches\n";
-				response += "3. Create prototype branches (autocrit/<experiment>/proto-a, proto-b, proto-c)\n";
+				response += "3. Create prototype branches (autoproto/<experiment>/proto-a, proto-b, proto-c)\n";
 				response += "4. Build seed app on each branch, then run_evaluation with mode 'quick'\n";
 			} else {
 				response += "Next steps:\n";
@@ -202,7 +202,7 @@ export function registerInitTool(pi: ExtensionAPI, getRuntime: () => AutocritRun
 		},
 
 		renderCall(args, theme) {
-			let text = theme.fg("toolTitle", theme.bold("init_autocrit "));
+			let text = theme.fg("toolTitle", theme.bold("init_autoproto "));
 			text += theme.fg("accent", args.experiment_name ?? "");
 			text += theme.fg("dim", ` (${args.mode ?? "quick"})`);
 			return new Text(text, 0, 0);
