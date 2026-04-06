@@ -2,7 +2,7 @@
 
 Persona-driven UX evaluation for [pi](https://pi.dev/), inspired by ideas from [autoresearch](https://github.com/karpathy/autoresearch).
 
-For your earliest stages of product development: build a prototype, define your end-user persona, let synthetic users try it, iterate on their feedback, repeat.
+For your earliest stages of product development: define your target persona, app idea, and hypotheses and let synthetic users try it, iterate on their feedback, repeat.
 
 ## Why
 
