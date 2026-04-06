@@ -10,9 +10,9 @@ Building software with AI is getting fast and cheap. You can generate a working 
 
 More of the work now is on designing environments, feedback loops, and control systems. Engineers can provide direction, judgment, and taste while the agents do the building. But someone still needs to tell you whether what got built is any good and they need to it fast enough to keep up.
 
-A **'crit'** in design is a session where prototypes get constructive feedback to find flaws early. **Autoproto** automates that. A synthetic persona with a backstory, tasks, and behavioral traits actually uses the app in a real browser and reports what worked, what didn't, and why. The coding agent reads that feedback and iterates. The loop runs autonomously. In the morning, you have an app that's been through dozens of critique cycles, each one targeted at a specific failure or friction point.
+A synthetic persona with a backstory, tasks, and behavioral traits actually uses the app in a real browser and reports what worked, what didn't, and why. The coding agent reads that feedback and iterates. The loop runs autonomously, so in the morning, you have an app that's been through dozens of critique cycles, each one targeted at a specific failure or friction point.
 
-The main value is a structured, repeatable critique. It's early and rough, but it works and I hope it can accelerate prototypes into useful products for humans.
+It's early and rough, but it works and I hope it can accelerate prototypes into useful products for humans.
 
 ## Quick start
 
